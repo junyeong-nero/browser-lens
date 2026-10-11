@@ -1,0 +1,252 @@
+  #replay-slider::-webkit-slider-runnable-track {
+    height: 4px;
+    border: 0;
+    border-radius: var(--tds-radius-full);
+    background: transparent;
+    box-shadow: none;
+  }
+  #replay-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    margin-top: -6px;
+    border: 0;
+    border-radius: 50%;
+    background: var(--tds-fill-brand);
+    box-shadow: none;
+    filter: none;
+  }
+  #replay-slider::-moz-range-track {
+    height: 4px;
+    border: 0;
+    border-radius: var(--tds-radius-full);
+    background: var(--tds-grey-300);
+    box-shadow: none;
+  }
+  #replay-slider::-moz-range-progress {
+    height: 4px;
+    border-radius: var(--tds-radius-full);
+    background: var(--tds-fill-brand);
+  }
+  #replay-slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border: 0;
+    border-radius: 50%;
+    background: var(--tds-fill-brand);
+    box-shadow: none;
+    filter: none;
+  }
+  #replay-progress {
+    color: var(--md-sys-color-on-surface-variant);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 0 4px;
+    font-variant-numeric: tabular-nums;
+  }
+  /* Outlined select */
+  #replay-speed {
+    background: var(--tds-fill-surface);
+    color: var(--md-sys-color-on-surface);
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: var(--tds-radius-xs);
+    height: 36px;
+    padding: 0 12px;
+    font-family: var(--sans);
+    font-size: 14px;
+  }
+  #replay-controls button {
+    border-radius: var(--md-sys-shape-corner-full);
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  #replay-controls button:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+    color: var(--md-sys-color-on-surface);
+  }
+
+  #empty-state {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: var(--md-sys-typescale-body-large-size);
+    line-height: var(--md-sys-typescale-body-large-line-height);
+    letter-spacing: 0;
+    flex-direction: column;
+    gap: 8px;
+    padding: 32px 24px;
+    text-align: center;
+  }
+  #empty-state::before {
+    content: "";
+    width: 64px;
+    height: 64px;
+    border-radius: var(--tds-radius-3xl);
+    background: var(--tds-blue-50);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-sys-color-outline-variant) 68%, transparent);
+    color: var(--md-sys-color-primary);
+    display: inline-grid;
+    place-items: center;
+  }
+
+/* ── Simple UI variant: keep full UI visual language, show screenshot panel only. ── */
+body.simple-ui {
+  --left-aside-w: 0px;
+  --right-aside-w: 360px;
+  grid-template-columns: minmax(0, 1fr) 8px var(--right-aside-w);
+  grid-template-areas:
+    "header header        header"
+    "right-aside right-resizer main"
+    "right-aside right-resizer footer";
+}
+
+body.simple-ui main#main {
+  margin: 16px 16px 16px 8px;
+}
+
+body.simple-ui footer {
+  padding: 4px 16px 16px 8px;
+}
+
+body.simple-ui #simple-ui-support,
+body.simple-ui #left-resizer,
+body.simple-ui #left-sidebar,
+body.simple-ui [data-view="graph"],
+body.simple-ui #graph-wrap {
+  display: none !important;
+}
+
+body.simple-ui #right-resizer {
+  display: block;
+}
+
+body.simple-ui aside#right-sidebar {
+  display: grid;
+  margin: 16px 8px 16px 16px;
+}
+
+body.simple-ui .simple-screenshot-panel .sheet-body {
+  display: grid;
+  gap: 0;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  padding: 0;
+  scrollbar-gutter: stable both-edges;
+}
+
+body.simple-ui .simple-screenshot-panel .side-step-title {
+  align-self: start;
+  color: var(--md-sys-color-on-surface);
+  display: block;
+  font-size: var(--md-sys-typescale-title-small-size);
+  font-weight: 700;
+  line-height: var(--md-sys-typescale-title-small-line-height);
+  padding: 16px 16px 6px;
+  text-align: left;
+}
+
+body.simple-ui .simple-screenshot-panel .side-step-title.side-empty {
+  color: var(--fg-mute);
+  font-style: italic;
+  font-weight: 600;
+}
+
+body.simple-ui .simple-screenshot-body {
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 6px 16px;
+  overflow: hidden;
+}
+
+body.simple-ui .simple-screenshot-link {
+  align-items: center;
+  background: #000;
+  border-radius: calc(var(--md-sys-shape-corner-xl) - 4px);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-sys-color-outline-variant) 48%, transparent);
+  display: flex;
+  height: 100%;
+  justify-content: center;
+  min-height: 0;
+  overflow: hidden;
+  width: 100%;
+}
+
+body.simple-ui .simple-screenshot-link img {
+  display: block;
+  height: 100%;
+  object-fit: contain;
+  object-position: center center;
+  width: 100%;
+}
+
+body.simple-ui .simple-action-details {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 16px 16px;
+}
+
+body.simple-ui .simple-tool-card {
+  background: color-mix(in srgb, var(--md-sys-color-surface-container-high) 86%, transparent);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-lg);
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px 16px;
+}
+
+body.simple-ui .simple-tool-row {
+  align-items: start;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 84px minmax(0, 1fr);
+  min-width: 0;
+}
+
+body.simple-ui .simple-tool-label {
+  color: var(--fg-mute);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.5;
+  text-transform: none;
+}
+
+body.simple-ui .simple-tool-row code,
+body.simple-ui .simple-tool-row pre {
+  color: var(--fg-dim);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 900px) {
+  body.simple-ui {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "header"
+      "main"
+      "footer";
+  }
+
+  body.simple-ui #right-resizer,
+  body.simple-ui aside#right-sidebar {
+    display: none !important;
+  }
+
+  body.simple-ui main#main {
+    margin: 8px 12px;
+  }
+
+  body.simple-ui footer {
+    padding: 4px 12px 12px;
+  }
+}

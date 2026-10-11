@@ -1,0 +1,258 @@
+import json
+import ssl
+from collections.abc import Callable
+from typing import Any
+from urllib import error, request
+
+from google.genai import types
+
+from .chat_completion_adapter import (
+    build_function_declaration as build_chat_function_declaration,
+    content_to_text,
+    contents_to_messages,
+    declaration_to_openai_tool,
+    payload_to_response,
+)
+
+try:
+    import certifi
+except ImportError:  # pragma: no cover - certifi is expected via transitive deps.
+    certifi = None
+
+
+def _chat_completions_url(endpoint_url: str) -> str:
+    normalized = endpoint_url.rstrip("/")
+    if normalized.endswith("/chat/completions"):
+        return normalized
+    return f"{normalized}/chat/completions"
+
+
+class ChatCompletionsProvider:
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        endpoint_url: str | None = None,
+        base_url: str | None = None,
+        name: str | None = None,
+        error_prefix: str | None = None,
+        timeout_seconds: float = 15.0,
+        headers: dict[str, str] | None = None,
+        extra_body: dict[str, Any] | None = None,
+        token_limit_field: str = "max_completion_tokens",
+        supports_image_inputs: bool = True,
+        supports_temperature: bool = True,
+    ):
+        endpoint = (endpoint_url or base_url or "").strip()
+        if not endpoint:
+            raise ValueError("endpoint_url must not be empty.")
+        self._api_key = api_key
+        self._chat_completions_url = _chat_completions_url(endpoint)
+        self._timeout_seconds = timeout_seconds
+        self.name = name or endpoint
+        self._error_prefix = error_prefix or self.name
+        self._extra_headers = {
+            key: value
+            for key, value in (headers or {}).items()
+            if key.strip() and value.strip()
+        }
+        self._extra_body = extra_body or {}
+        self._token_limit_field = token_limit_field
+        self.supports_image_inputs = supports_image_inputs
+        self.supports_reasoning_summaries = False
+        self._supports_temperature = supports_temperature
+        self._client = None
+
+    @property
+    def sdk_client(self) -> None:
+        return None
+
+    def generate_text(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        system_prompt: str | None = None,
+        max_tokens: int = 160,
+        temperature: float = 0,
+        response_format: dict[str, Any] | None = None,
+    ) -> str:
+        body = self._build_text_body(
+            model=model,
+            prompt=prompt,
+            system_prompt=system_prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            response_format=response_format,
+        )
+        payload = self._post_json(body)
+        return self._extract_text(payload)
+
+    def build_function_declaration(
+        self, callable_: Callable[..., object]
+    ) -> types.FunctionDeclaration:
+        return build_chat_function_declaration(callable_)
+
+    def generate_content(
+        self,
+        model: str,
+        contents: list[types.Content],
+        config: types.GenerateContentConfig,
+    ) -> types.GenerateContentResponse:
+        body = self._build_content_body(model=model, contents=contents, config=config)
+        payload = self._post_json(body)
+        return payload_to_response(payload)
+
+    def _build_headers(self) -> dict[str, str]:
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+        headers.update(self._extra_headers)
+        return headers
+
+    def _build_text_body(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        system_prompt: str | None,
+        max_tokens: int,
+        temperature: float,
+        response_format: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        messages: list[dict[str, Any]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        body: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            self._token_limit_field: max_tokens,
+        }
+        if self._supports_temperature:
+            body["temperature"] = temperature
+        if response_format is not None:
+            body["response_format"] = response_format
+        return self._with_extra_body(body)
+
+    def _build_content_body(
+        self,
+        *,
+        model: str,
+        contents: list[types.Content],
+        config: types.GenerateContentConfig,
+    ) -> dict[str, Any]:
+        messages = contents_to_messages(contents)
+
+        if config.system_instruction:
+            system_text = content_to_text(config.system_instruction)
+            messages.insert(0, {"role": "system", "content": system_text})
+
+        body: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+        }
+
+        self._apply_generation_config(body, config)
+
+        tools = []
+        if config.tools:
+            for tool in config.tools:
+                if tool.function_declarations:
+                    for decl in tool.function_declarations:
+                        tools.append(declaration_to_openai_tool(decl))
+            if tools:
+                body["tools"] = [{"type": "function", "function": f} for f in tools]
+        return self._with_extra_body(body)
+
+    def _apply_generation_config(
+        self,
+        body: dict[str, Any],
+        config: types.GenerateContentConfig,
+    ) -> None:
+        # Reasoning models (supports_temperature=False) reject all custom
+        # sampling parameters, so gate both temperature and top_p together.
+        if self._supports_temperature:
+            if config.temperature is not None:
+                body["temperature"] = config.temperature
+            if config.top_p is not None:
+                body["top_p"] = config.top_p
+        if config.max_output_tokens is not None:
+            body[self._token_limit_field] = config.max_output_tokens
+        response_format = _build_response_format(config)
+        if response_format is not None:
+            body["response_format"] = response_format
+
+    def _with_extra_body(self, body: dict[str, Any]) -> dict[str, Any]:
+        if not self._extra_body:
+            return body
+        return {**body, **self._extra_body}
+
+    def _post_json(self, body: dict[str, Any]) -> dict[str, Any]:
+        http_request = request.Request(
+            self._chat_completions_url,
+            data=json.dumps(body, default=str).encode("utf-8"),
+            headers=self._build_headers(),
+            method="POST",
+        )
+
+        try:
+            with request.urlopen(
+                http_request,
+                timeout=self._timeout_seconds,
+                context=self._build_ssl_context(),
+            ) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except error.HTTPError as exc:
+            error_body = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(
+                f"{self._error_prefix} request failed with HTTP {exc.code}: {error_body}"
+            ) from exc
+        except error.URLError as exc:
+            raise RuntimeError(f"{self._error_prefix} request failed: {exc.reason}") from exc
+
+    def _build_ssl_context(self) -> ssl.SSLContext | None:
+        if certifi is None:
+            return None
+        return ssl.create_default_context(cafile=certifi.where())
+
+    def _extract_text(self, payload: dict[str, Any]) -> str:
+        choices = payload.get("choices") or []
+        if not choices:
+            raise RuntimeError(f"{self._error_prefix} response did not contain any choices.")
+
+        message = choices[0].get("message") or {}
+        content = message.get("content")
+        if isinstance(content, str) and content.strip():
+            return content.strip()
+        if isinstance(content, list):
+            text_parts = [
+                item.get("text", "")
+                for item in content
+                if isinstance(item, dict) and item.get("type") == "text"
+            ]
+            merged = "\n".join(part for part in text_parts if part).strip()
+            if merged:
+                return merged
+        raise RuntimeError(f"{self._error_prefix} response did not contain text content.")
+
+
+def _build_response_format(
+    config: types.GenerateContentConfig,
+) -> dict[str, Any] | None:
+    """Translate Gemini-style structured-output config into OpenAI-compatible
+    `response_format`. Returns None when no JSON output was requested.
+
+    We use plain `json_object` mode rather than strict `json_schema` because
+    OpenAI strict mode requires an object root, while callers (e.g. planner)
+    rely on bare JSON arrays. Combined with a "respond only with JSON"
+    instruction in the prompt, json_object is sufficient and broadly
+    supported across OpenRouter models.
+    """
+    mime = getattr(config, "response_mime_type", None)
+    schema = getattr(config, "response_schema", None)
+    if mime != "application/json" and schema is None:
+        return None
+    return {"type": "json_object"}

@@ -1,0 +1,45 @@
+cff-version: 1.2.0
+message: "If you use BrowserLens, please cite the UIST 2026 poster paper."
+title: "BrowserLens"
+type: software
+license: MIT
+repository-code: "https://github.com/junyeong-nero/browser-lens"
+authors:
+  - family-names: Song
+    given-names: Junyeong
+    affiliation: "Ulsan National Institute of Science and Technology (UNIST)"
+  - family-names: Kim
+    given-names: Mingyu
+    affiliation: "Ulsan National Institute of Science and Technology (UNIST)"
+  - family-names: Heo
+    given-names: Seongkook
+    affiliation: "Ulsan National Institute of Science and Technology (UNIST)"
+preferred-citation:
+  type: conference-paper
+  title: "BrowserLens: Interactive Diagnosis of Web-Agent Trajectories with a Layered State-Action Graph"
+  authors:
+    - family-names: Song
+      given-names: Junyeong
+      affiliation: "Ulsan National Institute of Science and Technology (UNIST)"
+    - family-names: Kim
+      given-names: Mingyu
+      affiliation: "Ulsan National Institute of Science and Technology (UNIST)"
+    - family-names: Heo
+      given-names: Seongkook
+      affiliation: "Ulsan National Institute of Science and Technology (UNIST)"
+  collection-title: "The 39th Annual ACM Symposium on User Interface Software and Technology (UIST Adjunct '26)"
+  conference:
+    name: "UIST Adjunct '26"
+    city: Detroit
+    region: MI
+    country: US
+    date-start: 2026-11-02
+    date-end: 2026-11-05
+  publisher:
+    name: "Association for Computing Machinery"
+    city: "New York, NY"
+    country: US
+  year: 2026
+  month: 11
+  doi: "10.1145/3830397.3841876"
+  isbn: "979-8-4007-2855-6"

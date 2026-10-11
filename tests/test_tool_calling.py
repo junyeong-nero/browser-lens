@@ -1,0 +1,1307 @@
+import unittest
+from unittest.mock import MagicMock, patch
+
+from google.genai import types
+
+from core.navigation_scope import NavigationScope
+from browser.aria_snapshot import NodeInfo, build_aria_snapshot
+from browser import build_browser_action_functions, EnvState
+from llm.provider.chat_completion_adapter import (
+    build_function_declaration as build_chat_function_declaration,
+)
+from tool_executor import (
+    MAX_ARIA_SNAPSHOT_CHARS,
+    BrowserToolExecutor,
+    compact_aria_snapshot_text,
+    prune_old_aria_parts,
+    prune_old_screenshot_parts,
+)
+from tools.types import ExecutedCall
+
+
+def multiply_numbers(x: float, y: float) -> dict:
+    """Multiplies two numbers."""
+    return {"result": x * y}
+
+
+class TestBrowserToolExecutor(unittest.TestCase):
+    def setUp(self):
+        self.mock_browser_computer = MagicMock()
+        self.mock_browser_computer.screen_size.return_value = (2000, 4000)
+        self.mock_browser_computer.latest_artifact_metadata.return_value = {
+            "screenshot_path": "step-0001.png",
+            "html_path": "step-0001.html",
+            "metadata_path": "step-0001.json",
+            "a11y_path": "step-0001.a11y.yaml",
+        }
+        self.executor = BrowserToolExecutor(
+            browser_computer=self.mock_browser_computer,
+            custom_functions=[
+                multiply_numbers,
+                *build_browser_action_functions(
+                    self.mock_browser_computer,
+                    include=(
+                        "reload_page",
+                        "list_tabs",
+                        "switch_to_next_tab",
+                        "switch_to_previous_tab",
+                        "switch_to_tab",
+                        "close_current_tab",
+                        "get_accessibility_tree",
+                        "upload_file",
+                    ),
+                ),
+            ],
+        )
+
+    def get_inline_data(
+        self,
+        function_response: types.FunctionResponse,
+    ) -> types.FunctionResponseBlob:
+        if function_response.parts is None:
+            self.fail("Expected function response parts")
+        inline_data = function_response.parts[0].inline_data
+        if inline_data is None:
+            self.fail("Expected inline data")
+        return inline_data
+
+    def build_function_declaration(
+        self,
+        callable_,
+    ) -> types.FunctionDeclaration:
+        return types.FunctionDeclaration(
+            name=callable_.__name__,
+            description=callable_.__doc__,
+            parameters_json_schema={"type": "object", "properties": {}},
+        )
+
+    def declaration_names(self, tools: list[types.Tool]) -> list[str]:
+        return [
+            declaration.name
+            for tool in tools
+            for declaration in (tool.function_declarations or [])
+            if declaration.name
+        ]
+
+    def test_execute_open_web_browser(self):
+        env_state = EnvState(screenshot=b"screenshot", url="https://example.com")
+        self.mock_browser_computer.open_web_browser.return_value = env_state
+
+        result = self.executor.execute(types.FunctionCall(name="open_web_browser", args={}))
+
+        self.assertEqual(result, env_state)
+        self.mock_browser_computer.open_web_browser.assert_called_once_with()
+
+    def test_execute_click_at(self):
+        self.executor.execute(types.FunctionCall(name="click_at", args={"x": 100, "y": 200}))
+
+        self.mock_browser_computer.click_at.assert_called_once_with(x=100, y=200)
+
+    def test_execute_hover_at(self):
+        self.executor.execute(types.FunctionCall(name="hover_at", args={"x": 100, "y": 200}))
+
+        self.mock_browser_computer.hover_at.assert_called_once_with(x=100, y=200)
+
+    def test_execute_type_text_at_uses_default_flags(self):
+        self.executor.execute(
+            types.FunctionCall(name="type_text_at", args={"x": 100, "y": 200, "text": "hello"})
+        )
+
+        self.mock_browser_computer.type_text_at.assert_called_once_with(
+            x=100,
+            y=200,
+            text="hello",
+            press_enter=False,
+            clear_before_typing=True,
+        )
+
+    def test_execute_scroll_document(self):
+        self.executor.execute(types.FunctionCall(name="scroll_document", args={"direction": "down"}))
+
+        self.mock_browser_computer.scroll_document.assert_called_once_with("down")
+
+    def test_execute_scroll_document_uses_default_direction(self):
+        self.executor.execute(types.FunctionCall(name="scroll_document", args={}))
+
+        self.mock_browser_computer.scroll_document.assert_called_once_with("down")
+
+    def test_execute_click_at_passes_viewport_pixel_coordinates_without_normalizing(self):
+        self.executor.execute(types.FunctionCall(name="click_at", args={"x": 1015, "y": 1058}))
+
+        self.mock_browser_computer.click_at.assert_called_once_with(x=1015, y=1058)
+
+    def test_execute_click_at_rejects_coordinates_outside_viewport(self):
+        with self.assertRaisesRegex(ValueError, "inside the current viewport"):
+            self.executor.execute(types.FunctionCall(name="click_at", args={"x": 2000, "y": 10}))
+
+        self.mock_browser_computer.click_at.assert_not_called()
+
+    def test_execute_wait_5_seconds(self):
+        self.executor.execute(types.FunctionCall(name="wait_5_seconds", args={}))
+
+        self.mock_browser_computer.wait_5_seconds.assert_called_once_with()
+
+    def test_execute_go_back(self):
+        self.executor.execute(types.FunctionCall(name="go_back", args={}))
+
+        self.mock_browser_computer.go_back.assert_called_once_with()
+
+    def test_execute_go_forward(self):
+        self.executor.execute(types.FunctionCall(name="go_forward", args={}))
+
+        self.mock_browser_computer.go_forward.assert_called_once_with()
+
+    def test_execute_search(self):
+        self.executor.execute(types.FunctionCall(name="search", args={}))
+
+        self.mock_browser_computer.search.assert_called_once_with()
+
+    def test_execute_navigate(self):
+        self.executor.execute(
+            types.FunctionCall(name="navigate", args={"url": "https://example.com"})
+        )
+
+        self.mock_browser_computer.navigate.assert_called_once_with("https://example.com")
+
+    def test_navigation_scope_blocks_external_search_for_site_task(self):
+        scoped_executor = BrowserToolExecutor(
+            browser_computer=self.mock_browser_computer,
+            navigation_scope=NavigationScope.from_query("allrecipes.com에서 pasta 검색"),
+        )
+
+        result = scoped_executor.execute(
+            types.FunctionCall(
+                name="navigate",
+                args={"url": "https://www.google.com/search?q=allrecipes+pasta"},
+            )
+        )
+
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error_type"], "TaskScopeViolation")
+        self.assertIn("allrecipes.com", result["error"])
+        self.mock_browser_computer.navigate.assert_not_called()
+
+    def test_navigation_scope_allows_target_site_navigation(self):
+        env_state = EnvState(
+            screenshot=b"screenshot",
+            url="https://www.allrecipes.com/search?q=pasta",
+        )
+        self.mock_browser_computer.navigate.return_value = env_state
+        scoped_executor = BrowserToolExecutor(
+            browser_computer=self.mock_browser_computer,
+            navigation_scope=NavigationScope.from_query("allrecipes.com에서 pasta 검색"),
+        )
+
+        result = scoped_executor.execute(
+            types.FunctionCall(
+                name="navigate",
+                args={"url": "https://www.allrecipes.com/search?q=pasta"},
+            )
+        )
+
+        self.assertEqual(result, env_state)
+        self.mock_browser_computer.navigate.assert_called_once_with(
+            "https://www.allrecipes.com/search?q=pasta"
+        )
+
+    def test_navigation_scope_allows_known_target_site_redirect_alias(self):
+        env_state = EnvState(
+            screenshot=b"screenshot",
+            url="https://www.allrecipes.com/search?q=pasta",
+        )
+        self.mock_browser_computer.navigate.return_value = env_state
+        scoped_executor = BrowserToolExecutor(
+            browser_computer=self.mock_browser_computer,
+            navigation_scope=NavigationScope.from_query("allrecipe.com에서 pasta 검색"),
+        )
+
+        result = scoped_executor.execute(
+            types.FunctionCall(
+                name="navigate",
+                args={"url": "https://www.allrecipe.com/search?q=pasta"},
+            )
+        )
+
+        self.assertEqual(result, env_state)
+
+    def test_navigation_scope_blocks_search_tool_for_site_task(self):
+        scoped_executor = BrowserToolExecutor(
+            browser_computer=self.mock_browser_computer,
+            navigation_scope=NavigationScope.from_query("allrecipes.com에서 pasta 검색"),
+        )
+
+        result = scoped_executor.execute(types.FunctionCall(name="search", args={}))
+
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["tool_name"], "search")
+        self.mock_browser_computer.search.assert_not_called()
+
+    def test_navigation_scope_returns_post_action_redirect_state(self):
+        self.mock_browser_computer.click_at.return_value = EnvState(
+            screenshot=b"screenshot",
+            url="https://search.naver.com/search.naver?query=allrecipes",
+        )
+        scoped_executor = BrowserToolExecutor(
+            browser_computer=self.mock_browser_computer,
+            navigation_scope=NavigationScope.from_query("allrecipes.com에서 pasta 검색"),
+        )
+
+        result = scoped_executor.execute(
+            types.FunctionCall(name="click_at", args={"x": 10, "y": 10})
+        )
+
+        self.assertEqual(result, self.mock_browser_computer.click_at.return_value)
+
+    def test_navigation_scope_returns_history_navigation_escape_state(self):
+        scoped_executor = BrowserToolExecutor(
+            browser_computer=self.mock_browser_computer,
+            navigation_scope=NavigationScope.from_query("allrecipes.com에서 pasta 검색"),
+        )
+
+        self.mock_browser_computer.go_back.return_value = EnvState(
+            screenshot=b"screenshot",
+            url="https://example.org/unrelated",
+        )
+        back_result = scoped_executor.execute(types.FunctionCall(name="go_back", args={}))
+
+        self.mock_browser_computer.go_forward.return_value = EnvState(
+            screenshot=b"screenshot",
+            url="https://www.wikipedia.org/wiki/Pasta",
+        )
+        forward_result = scoped_executor.execute(
+            types.FunctionCall(name="go_forward", args={})
+        )
+
+        self.assertEqual(back_result, self.mock_browser_computer.go_back.return_value)
+        self.assertEqual(forward_result, self.mock_browser_computer.go_forward.return_value)
+
+    def test_navigation_scope_allows_observation_after_off_scope_redirect(self):
+        off_scope_state = EnvState(
+            screenshot=b"screenshot",
+            url="https://accounts.example.com/login",
+        )
+        self.mock_browser_computer.open_web_browser.return_value = off_scope_state
+        scoped_executor = BrowserToolExecutor(
+            browser_computer=self.mock_browser_computer,
+            navigation_scope=NavigationScope.from_query("allrecipes.com에서 pasta 검색"),
+        )
+
+        result = scoped_executor.execute(
+            types.FunctionCall(name="observe_page", args={})
+        )
+
+        self.assertEqual(result, off_scope_state)
+
+    def test_navigation_scope_allows_history_navigation_within_scope_or_blank(self):
+        scoped_executor = BrowserToolExecutor(
+            browser_computer=self.mock_browser_computer,
+            navigation_scope=NavigationScope.from_query("allrecipes.com에서 pasta 검색"),
+        )
+        in_scope_state = EnvState(
+            screenshot=b"screenshot",
+            url="https://www.allrecipes.com/recipe/pasta",
+        )
+        blank_state = EnvState(screenshot=b"screenshot", url="about:blank")
+        self.mock_browser_computer.go_back.return_value = in_scope_state
+        self.mock_browser_computer.go_forward.return_value = blank_state
+
+        back_result = scoped_executor.execute(types.FunctionCall(name="go_back", args={}))
+        forward_result = scoped_executor.execute(
+            types.FunctionCall(name="go_forward", args={})
+        )
+
+        self.assertEqual(back_result, in_scope_state)
+        self.assertEqual(forward_result, blank_state)
+
+    def test_google_flights_scope_allows_flights_but_blocks_google_search(self):
+        scope = NavigationScope.from_query("googleflight에서 서울 도쿄 항공권 검색")
+        self.assertIsNotNone(scope)
+        scoped_executor = BrowserToolExecutor(
+            browser_computer=self.mock_browser_computer,
+            navigation_scope=scope,
+        )
+        self.mock_browser_computer.navigate.return_value = EnvState(
+            screenshot=b"screenshot",
+            url="https://www.google.com/travel/flights",
+        )
+
+        allowed = scoped_executor.execute(
+            types.FunctionCall(
+                name="navigate",
+                args={"url": "https://www.google.com/travel/flights"},
+            )
+        )
+        blocked = scoped_executor.execute(
+            types.FunctionCall(
+                name="navigate",
+                args={"url": "https://www.google.com/search?q=flights+icn+nrt"},
+            )
+        )
+
+        self.assertFalse(isinstance(allowed, dict))
+        self.assertEqual(blocked["status"], "error")
+        self.assertIn("Google Flights", blocked["error"])
+
+    def test_execute_key_combination(self):
+        self.executor.execute(
+            types.FunctionCall(name="key_combination", args={"keys": "Meta+Shift+P"})
+        )
+
+        self.mock_browser_computer.key_combination.assert_called_once_with(
+            ["Meta", "Shift", "P"]
+        )
+
+    def test_execute_key_combination_accepts_declared_list_args(self):
+        self.executor.execute(
+            types.FunctionCall(
+                name="key_combination",
+                args={"keys": ["Meta", "Shift", "P"]},
+            )
+        )
+
+        self.mock_browser_computer.key_combination.assert_called_once_with(
+            ["Meta", "Shift", "P"]
+        )
+
+    def test_execute_key_combination_rejects_empty_keys(self):
+        with self.assertRaisesRegex(ValueError, "at least one key"):
+            self.executor.execute(
+                types.FunctionCall(name="key_combination", args={"keys": []})
+            )
+
+        self.mock_browser_computer.key_combination.assert_not_called()
+
+    def test_execute_reload_page_delegates_to_browser_computer(self):
+        env_state = EnvState(screenshot=b"screenshot", url="https://example.com")
+        self.mock_browser_computer.reload_page.return_value = env_state
+
+        result = self.executor.execute(types.FunctionCall(name="reload_page", args={}))
+
+        self.mock_browser_computer.reload_page.assert_called_once_with()
+        self.assertEqual(result, env_state)
+
+    def test_execute_switch_to_next_tab_delegates_to_browser_computer(self):
+        env_state = EnvState(screenshot=b"screenshot", url="https://example.com/next")
+        self.mock_browser_computer.switch_to_next_tab.return_value = env_state
+
+        result = self.executor.execute(types.FunctionCall(name="switch_to_next_tab", args={}))
+
+        self.mock_browser_computer.switch_to_next_tab.assert_called_once_with()
+        self.assertEqual(result, env_state)
+
+    def test_execute_switch_to_previous_tab_delegates_to_browser_computer(self):
+        env_state = EnvState(screenshot=b"screenshot", url="https://example.com/prev")
+        self.mock_browser_computer.switch_to_previous_tab.return_value = env_state
+
+        result = self.executor.execute(types.FunctionCall(name="switch_to_previous_tab", args={}))
+
+        self.mock_browser_computer.switch_to_previous_tab.assert_called_once_with()
+        self.assertEqual(result, env_state)
+
+
+    def test_execute_list_tabs_delegates_to_browser_computer(self):
+        tabs_payload = {
+            "active_tab_index": 1,
+            "tab_count": 2,
+            "tabs": [
+                {"index": 0, "url": "https://example.com", "title": "First", "active": False},
+                {"index": 1, "url": "https://example.com/popup", "title": "Popup", "active": True},
+            ],
+        }
+        self.mock_browser_computer.list_tabs.return_value = tabs_payload
+
+        result = self.executor.execute(types.FunctionCall(name="list_tabs", args={}))
+
+        self.mock_browser_computer.list_tabs.assert_called_once_with()
+        self.assertEqual(result, tabs_payload)
+
+    def test_execute_switch_to_tab_delegates_to_browser_computer(self):
+        env_state = EnvState(screenshot=b"screenshot", url="https://example.com/tab")
+        self.mock_browser_computer.switch_to_tab.return_value = env_state
+
+        result = self.executor.execute(
+            types.FunctionCall(name="switch_to_tab", args={"index": 2})
+        )
+
+        self.mock_browser_computer.switch_to_tab.assert_called_once_with(index=2)
+        self.assertEqual(result, env_state)
+
+    def test_execute_close_current_tab_delegates_to_browser_computer(self):
+        env_state = EnvState(screenshot=b"screenshot", url="https://example.com/original")
+        self.mock_browser_computer.close_current_tab.return_value = env_state
+
+        result = self.executor.execute(types.FunctionCall(name="close_current_tab", args={}))
+
+        self.mock_browser_computer.close_current_tab.assert_called_once_with()
+        self.assertEqual(result, env_state)
+
+    def test_execute_switch_to_tab_invalid_index_raises_value_error(self):
+        self.mock_browser_computer.switch_to_tab.side_effect = ValueError("Invalid tab index 5")
+
+        with self.assertRaisesRegex(ValueError, "Invalid tab index"):
+            self.executor.execute(types.FunctionCall(name="switch_to_tab", args={"index": 5}))
+
+    def test_execute_close_current_tab_single_tab_raises_value_error(self):
+        self.mock_browser_computer.close_current_tab.side_effect = ValueError(
+            "Cannot close the only open tab"
+        )
+
+        with self.assertRaisesRegex(ValueError, "Cannot close the only open tab"):
+            self.executor.execute(types.FunctionCall(name="close_current_tab", args={}))
+
+    def test_execute_upload_file_uses_viewport_pixel_coordinates(self):
+        env_state = EnvState(screenshot=b"screenshot", url="https://example.com")
+        self.mock_browser_computer.upload_file.return_value = env_state
+
+        result = self.executor.execute(
+            types.FunctionCall(
+                name="upload_file",
+                args={"x": 100, "y": 200, "path": "/tmp/file.txt"},
+            )
+        )
+
+        self.mock_browser_computer.upload_file.assert_called_once_with(
+            x=100, y=200, path="/tmp/file.txt"
+        )
+        self.assertEqual(result, env_state)
+
+    def test_execute_get_accessibility_tree_returns_dict(self):
+        tree_payload = {
+            "tree": "- body\n  - button: Continue",
+            "url": "https://example.com",
+            "source": "dom_accessibility_outline",
+            "status": "captured",
+            "error": None,
+        }
+        self.mock_browser_computer.get_accessibility_tree.return_value = tree_payload
+
+        result = self.executor.execute(
+            types.FunctionCall(name="get_accessibility_tree", args={})
+        )
+
+        self.mock_browser_computer.get_accessibility_tree.assert_called_once_with()
+        self.assertEqual(result, tree_payload)
+
+    def test_execute_check_by_ref_returns_dict(self):
+        self.mock_browser_computer.resolve_ref.return_value.is_visible.return_value = True
+        self.mock_browser_computer.resolve_ref.return_value.is_enabled.return_value = True
+        self.mock_browser_computer.resolve_ref.return_value.text_content.return_value = "Continue"
+        self.mock_browser_computer.resolve_ref.return_value.input_value.return_value = ""
+        self.mock_browser_computer._aria_ref_map = {1: NodeInfo(role="button", name="Continue", nth=0)}
+
+        result = self.executor.execute(types.FunctionCall(name="check_by_ref", args={"ref": 1}))
+
+        self.assertEqual(result["ref"], 1)
+        self.assertEqual(result["role"], "button")
+        self.assertEqual(result["name"], "Continue")
+        self.assertTrue(result["visible"])
+
+    def test_execute_select_option_by_ref_returns_env_state(self):
+        env_state = EnvState(screenshot=b"screenshot", url="https://example.com")
+        locator = MagicMock()
+        locator.evaluate.return_value = {"ok": True, "selected_label": "Ulsan"}
+        self.mock_browser_computer.resolve_ref.return_value = locator
+        self.mock_browser_computer.current_state.return_value = env_state
+
+        result = self.executor.execute(
+            types.FunctionCall(
+                name="select_option_by_ref",
+                args={"ref": 1, "option_label": "Ulsan"},
+            )
+        )
+
+        self.assertTrue(self.executor.may_change_browser_state("select_option_by_ref"))
+        self.mock_browser_computer.resolve_ref.assert_called_once_with(1)
+        self.mock_browser_computer._mark_last_action.assert_called_once_with(
+            "select_option_by_ref"
+        )
+        locator.evaluate.assert_called_once()
+        self.assertEqual(result, env_state)
+
+    def test_execute_wait_for_ref_returns_env_state(self):
+        env_state = EnvState(screenshot=b"screenshot", url="https://example.com")
+        self.mock_browser_computer.resolve_ref.return_value = MagicMock()
+        self.mock_browser_computer.current_state.return_value = env_state
+
+        result = self.executor.execute(
+            types.FunctionCall(
+                name="wait_for_ref",
+                args={"ref": 1, "state": "visible", "timeout_ms": 2500},
+            )
+        )
+
+        self.mock_browser_computer.resolve_ref.return_value.wait_for.assert_called_once_with(
+            state="visible",
+            timeout=2500,
+        )
+        self.assertEqual(result, env_state)
+
+    def test_execute_drag_and_drop(self):
+        self.executor.execute(
+            types.FunctionCall(
+                name="drag_and_drop",
+                args={
+                    "x": 100,
+                    "y": 200,
+                    "destination_x": 300,
+                    "destination_y": 400,
+                },
+            )
+        )
+
+        self.mock_browser_computer.drag_and_drop.assert_called_once_with(
+            x=100,
+            y=200,
+            destination_x=300,
+            destination_y=400,
+        )
+
+    def test_execute_scroll_at_passes_viewport_pixel_coordinates_and_magnitude(self):
+        self.executor.execute(
+            types.FunctionCall(
+                name="scroll_at",
+                args={"x": 100, "y": 200, "direction": "down", "magnitude": 500},
+            )
+        )
+
+        self.mock_browser_computer.scroll_at.assert_called_once_with(
+            x=100,
+            y=200,
+            direction="down",
+            magnitude=500,
+        )
+
+    def test_execute_custom_function(self):
+        result = self.executor.execute(
+            types.FunctionCall(name=multiply_numbers.__name__, args={"x": 2, "y": 3})
+        )
+
+        self.assertEqual(result, {"result": 6})
+
+    def test_execute_call_includes_artifacts_for_env_state(self):
+        env_state = EnvState(screenshot=b"screenshot", url="https://example.com")
+        self.mock_browser_computer.navigate.return_value = env_state
+
+        executed_call = self.executor.execute_call(
+            types.FunctionCall(name="navigate", args={"url": "https://example.com"})
+        )
+
+        self.assertEqual(executed_call.result, env_state)
+        self.assertEqual(
+            executed_call.artifacts,
+            self.mock_browser_computer.latest_artifact_metadata.return_value,
+        )
+
+    def test_text_grounding_keeps_raw_aria_artifact_and_response(self):
+        executor = BrowserToolExecutor(
+            browser_computer=self.mock_browser_computer,
+            grounding="text",
+        )
+        env_state = EnvState(screenshot=b"screenshot", url="https://example.com")
+        self.mock_browser_computer.navigate.return_value = env_state
+        self.mock_browser_computer.take_aria_snapshot.return_value = build_aria_snapshot(
+            """\
+- generic "Layout"
+- button "Continue"
+""",
+            "https://example.com",
+        )
+
+        executed_call = executor.execute_call(
+            types.FunctionCall(name="navigate", args={"url": "https://example.com"})
+        )
+        function_response = executor.serialize_function_response(executed_call)
+
+        self.assertEqual(
+            executed_call.artifacts["aria_snapshot"],
+            self.mock_browser_computer.take_aria_snapshot.return_value.text,
+        )
+        self.assertEqual(
+            function_response.response["aria_snapshot"],
+            self.mock_browser_computer.take_aria_snapshot.return_value.text,
+        )
+        self.assertIn(
+            '[2] button "Continue" actionable',
+            function_response.response["aria_snapshot"],
+        )
+        self.assertIn(
+            '[1] generic "Layout" read-only',
+            function_response.response["aria_snapshot"],
+        )
+        self.assertNotIn("aria_snapshot_mode", function_response.response)
+        self.mock_browser_computer.take_aria_snapshot.assert_called_once_with()
+
+    def test_execute_call_wraps_browser_actions_with_action_capture(self):
+        class CaptureBrowser:
+            def __init__(self):
+                self.started = False
+                self.ended = False
+                self.persist_values = []
+
+            def begin_action_capture(self):
+                self.started = True
+
+            def end_action_capture(self, *, persist=True):
+                self.ended = True
+                self.persist_values.append(persist)
+                return {"action_clip_gif_path": "step-0001-action.gif"}
+
+            def navigate(self, url):
+                return EnvState(screenshot=b"screenshot", url=url)
+
+            def latest_artifact_metadata(self):
+                return {"metadata_path": "step-0001.json"}
+
+        browser = CaptureBrowser()
+        executor = BrowserToolExecutor(browser_computer=browser)
+
+        executed_call = executor.execute_call(
+            types.FunctionCall(name="navigate", args={"url": "https://example.com"})
+        )
+
+        self.assertTrue(browser.started)
+        self.assertTrue(browser.ended)
+        self.assertEqual(browser.persist_values, [True])
+        self.assertEqual(executed_call.artifacts["action_clip_gif_path"], "step-0001-action.gif")
+
+    def test_execute_call_discards_action_capture_for_dict_results(self):
+        class CaptureBrowser:
+            def __init__(self):
+                self.started = False
+                self.persist_values = []
+                self.cleared_actions = []
+
+            def begin_action_capture(self):
+                self.started = True
+
+            def end_action_capture(self, *, persist=True):
+                self.persist_values.append(persist)
+                if persist:
+                    return {"action_clip_gif_path": "should-not-be-used.gif"}
+                return None
+
+            def clear_pending_action(self, action_name=None):
+                self.cleared_actions.append(action_name)
+
+            def latest_artifact_metadata(self):
+                return {
+                    "metadata_path": "step-0001.json",
+                    "action_clip_gif_path": "old-action.gif",
+                }
+
+        browser = CaptureBrowser()
+        executor = BrowserToolExecutor(
+            browser_computer=browser,
+            custom_functions=[multiply_numbers],
+        )
+
+        executed_call = executor.execute_call(
+            types.FunctionCall(name=multiply_numbers.__name__, args={"x": 2, "y": 3})
+        )
+
+        self.assertTrue(browser.started)
+        self.assertEqual(browser.persist_values, [False])
+        self.assertEqual(browser.cleared_actions, [None])
+        self.assertEqual(executed_call.result, {"result": 6})
+        self.assertIsNone(executed_call.artifacts)
+
+    def test_execute_call_adds_snapshot_artifacts_for_dict_results_when_history_is_active(self):
+        class SnapshotBrowser:
+            def __init__(self):
+                self.current_state_calls = 0
+
+            def history_dir(self):
+                return "/tmp/browser-lens-history"
+
+            def current_state(self):
+                self.current_state_calls += 1
+                return EnvState(screenshot=b"snapshot", url="https://example.com")
+
+            def latest_artifact_metadata(self):
+                if self.current_state_calls == 0:
+                    return None
+                return {
+                    "screenshot_path": "step-0001.png",
+                    "html_path": "step-0001.html",
+                    "metadata_path": "step-0001.json",
+                }
+
+            def list_tabs(self):
+                return {"active_tab_index": 0, "tab_count": 1, "tabs": []}
+
+        browser = SnapshotBrowser()
+        executor = BrowserToolExecutor(
+            browser_computer=browser,
+            custom_functions=[
+                *build_browser_action_functions(browser, include=("list_tabs",)),
+            ],
+        )
+
+        executed_call = executor.execute_call(types.FunctionCall(name="list_tabs", args={}))
+
+        self.assertEqual(executed_call.result["tab_count"], 1)
+        self.assertEqual(browser.current_state_calls, 1)
+        self.assertEqual(
+            executed_call.artifacts,
+            {
+                "screenshot_path": "step-0001.png",
+                "html_path": "step-0001.html",
+                "metadata_path": "step-0001.json",
+            },
+        )
+
+    def test_execute_call_keeps_artifacts_when_scoped_observation_returns_off_scope_state(self):
+        artifacts = {
+            "screenshot_path": "step-0001.png",
+            "html_path": "step-0001.html",
+            "metadata_path": "step-0001.json",
+        }
+        self.mock_browser_computer.latest_artifact_metadata.return_value = artifacts
+        self.mock_browser_computer.open_web_browser.return_value = EnvState(
+            screenshot=b"screenshot",
+            url="https://search.naver.com/search.naver?query=pasta",
+        )
+        scoped_executor = BrowserToolExecutor(
+            browser_computer=self.mock_browser_computer,
+            navigation_scope=NavigationScope.from_query("allrecipes.com에서 pasta 검색"),
+        )
+
+        executed_call = scoped_executor.execute_call(
+            types.FunctionCall(name="observe_page", args={})
+        )
+
+        self.assertEqual(
+            executed_call.result,
+            self.mock_browser_computer.open_web_browser.return_value,
+        )
+        self.assertEqual(executed_call.artifacts, artifacts)
+
+    def test_execute_call_discards_action_capture_when_tool_raises(self):
+        class CaptureBrowser:
+            def __init__(self):
+                self.persist_values = []
+                self.cleared_actions = []
+
+            def begin_action_capture(self):
+                pass
+
+            def end_action_capture(self, *, persist=True):
+                self.persist_values.append(persist)
+                return {"action_clip_gif_path": "should-not-be-used.gif"}
+
+            def clear_pending_action(self, action_name=None):
+                self.cleared_actions.append(action_name)
+
+        def failing_tool() -> dict:
+            raise RuntimeError("boom")
+
+        browser = CaptureBrowser()
+        executor = BrowserToolExecutor(
+            browser_computer=browser,
+            custom_functions=[failing_tool],
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "boom"):
+            executor.execute_call(types.FunctionCall(name=failing_tool.__name__, args={}))
+
+        self.assertEqual(browser.persist_values, [False])
+        self.assertEqual(browser.cleared_actions, [None])
+
+    def test_serialize_function_response_for_env_state(self):
+        executed_call = self.executor.execute_call(
+            types.FunctionCall(id="call-1", name="navigate", args={"url": "https://example.com"})
+        )
+        executed_call = executed_call.__class__(
+            function_call=executed_call.function_call,
+            result=EnvState(screenshot=b"screenshot", url="https://example.com"),
+            artifacts=executed_call.artifacts,
+        )
+
+        function_response = self.executor.serialize_function_response(
+            executed_call,
+            extra_response_fields={"safety_acknowledgement": "true"},
+        )
+
+        self.assertEqual(function_response.name, "navigate")
+        self.assertEqual(function_response.id, "call-1")
+        self.assertEqual(
+            function_response.response,
+            {
+                "url": "https://example.com",
+                "coordinate_system": "viewport_css_pixels",
+                "coordinate_instruction": (
+                    "For coordinate tools, use viewport CSS pixel coordinates "
+                    "matching the current screenshot."
+                ),
+                "safety_acknowledgement": "true",
+            },
+        )
+        inline_data = self.get_inline_data(function_response)
+        self.assertEqual(inline_data.mime_type, "image/png")
+        self.assertEqual(inline_data.data, b"screenshot")
+
+    def test_serialize_vision_response_includes_coordinate_system_metadata(self):
+        executed_call = ExecutedCall(
+            function_call=types.FunctionCall(id="call-vision", name="navigate"),
+            result=EnvState(
+                page={"url": "https://example.com"},
+                viewport={"screenshot": b"screenshot", "width": 1470, "height": 836},
+            ),
+            artifacts=None,
+        )
+
+        function_response = self.executor.serialize_function_response(executed_call)
+
+        self.assertEqual(
+            function_response.response["coordinate_system"],
+            "viewport_css_pixels",
+        )
+        self.assertEqual(function_response.response["viewport_width"], 1470)
+        self.assertEqual(function_response.response["viewport_height"], 836)
+        self.assertIn(
+            "x must be 0-1469 and y must be 0-835",
+            function_response.response["coordinate_instruction"],
+        )
+        self.assertIn(
+            "Do not use normalized 0-1000 coordinates",
+            function_response.response["coordinate_instruction"],
+        )
+
+    def test_serialize_env_state_response_includes_compact_tab_metadata(self):
+        self.mock_browser_computer.list_tabs.return_value = {
+            "active_tab_index": 1,
+            "tab_count": 3,
+            "tabs": [
+                {"index": 0, "url": "https://example.com", "title": "First", "active": False},
+                {"index": 1, "url": "https://example.com/popup", "title": "Popup", "active": True},
+                {"index": 2, "url": "https://example.com/other", "title": "Other", "active": False},
+            ],
+        }
+        executed_call = ExecutedCall(
+            function_call=types.FunctionCall(id="call-tabs", name="navigate"),
+            result=EnvState(screenshot=b"screenshot", url="https://example.com/popup"),
+            artifacts=None,
+        )
+
+        function_response = self.executor.serialize_function_response(executed_call)
+
+        self.assertEqual(function_response.response["active_tab_index"], 1)
+        self.assertEqual(function_response.response["tab_count"], 3)
+        self.assertNotIn("tabs", function_response.response)
+
+
+    def test_serialize_text_grounding_returns_raw_aria_snapshot(self):
+        executor = BrowserToolExecutor(
+            browser_computer=self.mock_browser_computer,
+            grounding="text",
+        )
+        snapshot = build_aria_snapshot(
+            """\
+- generic "Layout"
+- heading "Checkout" [level=1]
+- textbox "Email"
+- button "Continue"
+""",
+            "https://example.com",
+        )
+        self.mock_browser_computer.take_aria_snapshot.return_value = snapshot
+        executed_call = ExecutedCall(
+            function_call=types.FunctionCall(id="call-aria", name="navigate"),
+            result=EnvState(screenshot=b"screenshot", url="https://example.com"),
+            artifacts=None,
+        )
+
+        function_response = executor.serialize_function_response(executed_call)
+
+        response = function_response.response
+        self.assertEqual(response["aria_snapshot"], snapshot.text)
+        self.assertNotIn("aria_snapshot_mode", response)
+        self.assertNotIn("aria_snapshot_policy", response)
+        self.assertNotIn("aria_snapshot_omitted_nodes", response)
+        self.assertNotIn("aria_snapshot_rendered_nodes", response)
+        self.assertIn('[1] generic "Layout" read-only', response["aria_snapshot"])
+        self.assertIn(
+            '[2] heading "Checkout" [level=1] read-only',
+            response["aria_snapshot"],
+        )
+        self.assertIn('[3] textbox "Email" actionable', response["aria_snapshot"])
+        self.assertIn('[4] button "Continue" actionable', response["aria_snapshot"])
+
+    def test_text_grounding_keeps_raw_artifact_and_response_identical(self):
+        executor = BrowserToolExecutor(
+            browser_computer=self.mock_browser_computer,
+            grounding="text",
+        )
+        env_state = EnvState(screenshot=b"screenshot", url="https://store.example")
+        self.mock_browser_computer.navigate.return_value = env_state
+        snapshot = build_aria_snapshot(
+            """\
+- generic "Layout"
+- textbox "Search reviews"
+- button "Search"
+""",
+            "https://store.example",
+        )
+        self.mock_browser_computer.take_aria_snapshot.return_value = snapshot
+
+        executed_call = executor.execute_call(
+            types.FunctionCall(name="navigate", args={"url": "https://store.example"})
+        )
+        function_response = executor.serialize_function_response(executed_call)
+
+        self.assertEqual(
+            executed_call.artifacts["aria_snapshot"],
+            function_response.response["aria_snapshot"],
+        )
+        self.assertEqual(function_response.response["aria_snapshot"], snapshot.text)
+        self.assertNotIn("aria_snapshot_policy", function_response.response)
+
+    def test_text_grounding_does_not_measure_visibility_for_aria_snapshot(self):
+        browser = MagicMock()
+        browser.take_aria_snapshot.return_value = build_aria_snapshot(
+            '- button "Continue"',
+            "https://example.com",
+        )
+        browser.list_tabs.return_value = {}
+        executor = BrowserToolExecutor(
+            browser_computer=browser,
+            grounding="text",
+        )
+        executed_call = ExecutedCall(
+            function_call=types.FunctionCall(id="call-visibility", name="navigate"),
+            result=EnvState(screenshot=b"screenshot", url="https://example.com"),
+            artifacts=None,
+        )
+
+        response = executor.serialize_function_response(executed_call).response
+
+        browser.measure_ref_visibility.assert_not_called()
+        browser.resolve_ref.assert_not_called()
+        self.assertNotIn("aria_snapshot_visibility_enriched_refs", response)
+        self.assertIn('[1] button "Continue" actionable', response["aria_snapshot"])
+
+    def test_text_grounding_declares_observe_page_tool(self):
+        executor = BrowserToolExecutor(
+            browser_computer=self.mock_browser_computer,
+            grounding="text",
+        )
+
+        tools = executor.build_tools(self.build_function_declaration)
+
+        declarations = tools[0].function_declarations or []
+        names = [declaration.name for declaration in declarations]
+        self.assertIn("observe_page", names)
+        self.assertIn("select_option_by_ref", names)
+        self.assertNotIn("open_web_browser", names)
+        observe_declaration = next(
+            declaration for declaration in declarations if declaration.name == "observe_page"
+        )
+        description = observe_declaration.description or ""
+        self.assertIn("ARIA snapshot", description)
+        self.assertIn("stable refs", description)
+        self.assertNotIn("simplified ARIA-derived page state", description)
+        self.assertNotIn("omitted nodes", description)
+
+    def test_text_grounding_rejects_undeclared_coordinate_tool_after_build_tools(self):
+        executor = BrowserToolExecutor(
+            browser_computer=self.mock_browser_computer,
+            grounding="text",
+        )
+
+        tools = executor.build_tools(self.build_function_declaration)
+
+        self.assertNotIn("click_at", self.declaration_names(tools))
+        self.assertFalse(executor.supports_function("click_at"))
+        with self.assertRaises(ValueError):
+            executor.execute(
+                types.FunctionCall(name="click_at", args={"x": 10, "y": 20})
+            )
+        self.mock_browser_computer.click_at.assert_not_called()
+
+    def test_text_grounding_rejects_excluded_search_after_build_tools(self):
+        executor = BrowserToolExecutor(
+            browser_computer=self.mock_browser_computer,
+            grounding="text",
+        )
+
+        tools = executor.build_tools(
+            self.build_function_declaration,
+            excluded_predefined_functions=["search"],
+        )
+
+        self.assertNotIn("search", self.declaration_names(tools))
+        self.assertFalse(executor.supports_function("search"))
+        with self.assertRaises(ValueError):
+            executor.execute(types.FunctionCall(name="search", args={}))
+        self.mock_browser_computer.search.assert_not_called()
+
+    def test_scoped_build_tools_excludes_search_descriptor(self):
+        def search() -> dict:
+            """Open the configured browser search page."""
+            return {}
+
+        executor = BrowserToolExecutor(
+            browser_computer=self.mock_browser_computer,
+            grounding="text",
+            navigation_scope=NavigationScope.from_query("allrecipes.com에서 pasta 검색"),
+        )
+
+        with patch("tool_executor.TEXT_MODE_TOOL_DESCRIPTORS", [search]):
+            tools = executor.build_tools(self.build_function_declaration)
+
+        self.assertNotIn("search", self.declaration_names(tools))
+        self.assertFalse(executor.supports_function("search"))
+        with self.assertRaises(ValueError):
+            executor.execute(types.FunctionCall(name="search", args={}))
+        self.mock_browser_computer.search.assert_not_called()
+
+    def test_vision_grounding_declares_coordinate_tools_as_functions(self):
+        executor = BrowserToolExecutor(
+            browser_computer=self.mock_browser_computer,
+            grounding="vision",
+        )
+
+        tools = executor.build_tools(
+            self.build_function_declaration,
+            excluded_predefined_functions=["search"],
+        )
+        names = self.declaration_names(tools)
+
+        self.assertIn("click_at", names)
+        self.assertIn("scroll_at", names)
+        self.assertTrue(executor.supports_function("click_at"))
+        self.assertFalse(executor.supports_function("search"))
+        self.assertFalse(executor.supports_function("scroll_document"))
+        self.assertFalse(executor.supports_function("drag_and_drop"))
+        with self.assertRaises(ValueError):
+            executor.execute(types.FunctionCall(name="search", args={}))
+        self.mock_browser_computer.search.assert_not_called()
+
+    def test_vision_grounding_coordinate_tool_schema_uses_viewport_bounds(self):
+        executor = BrowserToolExecutor(
+            browser_computer=self.mock_browser_computer,
+            grounding="vision",
+        )
+
+        tools = executor.build_tools(build_chat_function_declaration)
+
+        declarations = tools[0].function_declarations or []
+        click_declaration = next(
+            declaration for declaration in declarations if declaration.name == "click_at"
+        )
+        schema = click_declaration.parameters_json_schema
+        self.assertIsInstance(schema, dict)
+        properties = schema["properties"]
+        self.assertEqual(properties["x"]["minimum"], 0)
+        self.assertEqual(properties["x"]["maximum"], 1999)
+        self.assertIn("current screenshot pixels", properties["x"]["description"])
+        self.assertEqual(properties["y"]["minimum"], 0)
+        self.assertEqual(properties["y"]["maximum"], 3999)
+        self.assertIn("current screenshot pixels", properties["y"]["description"])
+
+    def test_vision_grounding_omits_document_scroll_and_drag_tools(self):
+        executor = BrowserToolExecutor(
+            browser_computer=self.mock_browser_computer,
+            grounding="vision",
+        )
+
+        tools = executor.build_tools(self.build_function_declaration)
+        names = self.declaration_names(tools)
+
+        self.assertIn("scroll_at", names)
+        self.assertNotIn("scroll_document", names)
+        self.assertNotIn("drag_and_drop", names)
+        self.assertFalse(executor.supports_function("scroll_document"))
+        self.assertFalse(executor.supports_function("drag_and_drop"))
+
+    def test_text_grounding_observe_page_response_includes_aria_snapshot(self):
+        executor = BrowserToolExecutor(
+            browser_computer=self.mock_browser_computer,
+            grounding="text",
+        )
+        self.mock_browser_computer.open_web_browser.return_value = EnvState(
+            screenshot=b"screenshot",
+            url="https://example.com",
+        )
+        self.mock_browser_computer.take_aria_snapshot.return_value = build_aria_snapshot(
+            '- button "Continue"\n',
+            "https://example.com",
+        )
+
+        executed_call = executor.execute_call(
+            types.FunctionCall(id="call-observe", name="observe_page", args={})
+        )
+        function_response = executor.serialize_function_response(executed_call)
+
+        response = function_response.response
+        self.assertEqual(response["url"], "https://example.com")
+        self.assertNotIn("aria_snapshot_mode", response)
+        self.assertNotIn("aria_snapshot_policy", response)
+        self.assertNotIn("aria_snapshot_original_nodes", response)
+        self.assertNotIn("aria_snapshot_rendered_nodes", response)
+        self.assertNotIn("aria_snapshot_omitted_nodes", response)
+        self.assertNotIn("aria_snapshot_compression_ratio", response)
+        self.assertNotIn("aria_snapshot_section_count", response)
+        self.assertNotIn("aria_snapshot_visibility_enriched_refs", response)
+        self.assertIn('[1] button "Continue" actionable', response["aria_snapshot"])
+        self.assertIsNone(function_response.parts)
+
+    def test_serialize_mixed_grounding_includes_aria_and_screenshot(self):
+        executor = BrowserToolExecutor(
+            browser_computer=self.mock_browser_computer,
+            grounding="mixed",
+        )
+        self.mock_browser_computer.take_aria_snapshot.return_value = build_aria_snapshot(
+            '- button "Continue"\n',
+            "https://example.com",
+        )
+        executed_call = ExecutedCall(
+            function_call=types.FunctionCall(id="call-mixed", name="navigate"),
+            result=EnvState(screenshot=b"screenshot", url="https://example.com"),
+            artifacts=None,
+        )
+
+        function_response = executor.serialize_function_response(executed_call)
+
+        response = function_response.response
+        self.assertEqual(response["url"], "https://example.com")
+        self.assertEqual(response["coordinate_system"], "viewport_css_pixels")
+        self.assertNotIn("aria_snapshot_mode", response)
+        self.assertNotIn("aria_snapshot_policy", response)
+        self.assertNotIn("aria_snapshot_compression_ratio", response)
+        self.assertIn('[1] button "Continue" actionable', response["aria_snapshot"])
+        inline_data = self.get_inline_data(function_response)
+        self.assertEqual(inline_data.mime_type, "image/png")
+        self.assertEqual(inline_data.data, b"screenshot")
+
+    def test_compact_aria_snapshot_text_preserves_small_snapshots(self):
+        snapshot = "- button: Continue"
+
+        compacted, metadata = compact_aria_snapshot_text(snapshot)
+
+        self.assertEqual(compacted, snapshot)
+        self.assertEqual(metadata, {})
+
+    def test_serialize_function_response_for_dict(self):
+        executed_call = self.executor.execute_call(
+            types.FunctionCall(id="call-2", name=multiply_numbers.__name__, args={"x": 2, "y": 3})
+        )
+
+        function_response = self.executor.serialize_function_response(executed_call)
+
+        self.assertEqual(function_response.name, multiply_numbers.__name__)
+        self.assertEqual(function_response.id, "call-2")
+        self.assertEqual(function_response.response, {"result": 6})
+        self.assertIsNone(function_response.parts)
+
+    def test_execute_unknown_function_raises_value_error(self):
+        with self.assertRaises(ValueError):
+            self.executor.execute(types.FunctionCall(name="unknown_function", args={}))
+
+
+class TestPruneOldScreenshotParts(unittest.TestCase):
+    def make_screenshot_turn(self, name: str, screenshot: bytes) -> types.Content:
+        return types.Content(
+            role="user",
+            parts=[
+                types.Part(
+                    function_response=types.FunctionResponse(
+                        name=name,
+                        response={"url": f"https://example.com/{name}"},
+                        parts=[
+                            types.FunctionResponsePart(
+                                inline_data=types.FunctionResponseBlob(
+                                    mime_type="image/png",
+                                    data=screenshot,
+                                )
+                            )
+                        ],
+                    )
+                )
+            ],
+        )
+
+    def make_aria_turn(self, name: str, snapshot: str) -> types.Content:
+        return types.Content(
+            role="user",
+            parts=[
+                types.Part(
+                    function_response=types.FunctionResponse(
+                        name=name,
+                        response={
+                            "url": f"https://example.com/{name}",
+                            "aria_snapshot": snapshot,
+                        },
+                    )
+                )
+            ],
+        )
+
+    def get_function_response(self, content: types.Content) -> types.FunctionResponse:
+        if content.parts is None:
+            self.fail("Expected content parts")
+        function_response = content.parts[0].function_response
+        if function_response is None:
+            self.fail("Expected function response")
+        return function_response
+
+    def test_prune_old_screenshot_parts_prunes_only_turns_beyond_limit(self):
+        oldest_turn = self.make_screenshot_turn("navigate", b"oldest")
+        middle_turn = self.make_screenshot_turn("navigate", b"middle")
+        newest_turn = self.make_screenshot_turn("navigate", b"newest")
+        latest_turn = self.make_screenshot_turn("navigate", b"latest")
+        contents = [oldest_turn, middle_turn, newest_turn, latest_turn]
+
+        prune_old_screenshot_parts(contents, max_recent_turns_with_screenshots=3)
+
+        self.assertIsNone(self.get_function_response(oldest_turn).parts)
+        self.assertIsNotNone(self.get_function_response(middle_turn).parts)
+        self.assertIsNotNone(self.get_function_response(newest_turn).parts)
+        self.assertIsNotNone(self.get_function_response(latest_turn).parts)
+
+    def test_prune_old_screenshot_parts_ignores_non_browser_handler_responses(self):
+        custom_turn = self.make_screenshot_turn(multiply_numbers.__name__, b"custom")
+        oldest_turn = self.make_screenshot_turn("navigate", b"oldest")
+        middle_turn = self.make_screenshot_turn("navigate", b"middle")
+        newest_turn = self.make_screenshot_turn("navigate", b"newest")
+        latest_turn = self.make_screenshot_turn("navigate", b"latest")
+        contents = [custom_turn, oldest_turn, middle_turn, newest_turn, latest_turn]
+
+        prune_old_screenshot_parts(contents, max_recent_turns_with_screenshots=3)
+
+        self.assertIsNotNone(self.get_function_response(custom_turn).parts)
+        self.assertIsNone(self.get_function_response(oldest_turn).parts)
+        self.assertIsNotNone(self.get_function_response(middle_turn).parts)
+        self.assertIsNotNone(self.get_function_response(newest_turn).parts)
+        self.assertIsNotNone(self.get_function_response(latest_turn).parts)
+
+    def test_prune_old_screenshot_parts_prunes_custom_env_state_browser_actions(self):
+        oldest_turn = self.make_screenshot_turn("reload_page", b"oldest")
+        middle_turn = self.make_screenshot_turn("switch_to_tab", b"middle")
+        latest_turn = self.make_screenshot_turn("close_current_tab", b"latest")
+        contents = [oldest_turn, middle_turn, latest_turn]
+
+        prune_old_screenshot_parts(contents, max_recent_turns_with_screenshots=2)
+
+        self.assertIsNone(self.get_function_response(oldest_turn).parts)
+        self.assertIsNotNone(self.get_function_response(middle_turn).parts)
+        self.assertIsNotNone(self.get_function_response(latest_turn).parts)
+
+    def test_prune_old_aria_parts_keeps_only_requested_recent_turns(self):
+        oldest_turn = self.make_aria_turn("navigate", "oldest aria")
+        middle_turn = self.make_aria_turn("navigate", "middle aria")
+        latest_turn = self.make_aria_turn("navigate", "latest aria")
+        contents = [oldest_turn, middle_turn, latest_turn]
+
+        prune_old_aria_parts(contents, max_recent_turns_with_aria=1)
+
+        self.assertNotIn("aria_snapshot", self.get_function_response(oldest_turn).response)
+        self.assertNotIn("aria_snapshot", self.get_function_response(middle_turn).response)
+        self.assertEqual(
+            self.get_function_response(latest_turn).response["aria_snapshot"],
+            "latest aria",
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

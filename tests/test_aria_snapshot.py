@@ -1,0 +1,143 @@
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+from browser.aria_snapshot import AriaSnapshot, NodeInfo, build_aria_snapshot
+
+
+FIXTURE_YAML = """\
+- heading "Welcome" [level=1]
+- link "Home"
+- link "About"
+- textbox "Search"
+- button "Submit"
+- link "Home"
+"""
+
+
+def test_build_aria_snapshot_assigns_refs():
+    snapshot = build_aria_snapshot(FIXTURE_YAML, "https://example.com")
+    assert isinstance(snapshot, AriaSnapshot)
+    assert len(snapshot.ref_map) == 6
+    assert snapshot.url == "https://example.com"
+
+
+def test_refs_are_sequential():
+    snapshot = build_aria_snapshot(FIXTURE_YAML, "https://example.com")
+    assert list(snapshot.ref_map.keys()) == [1, 2, 3, 4, 5, 6]
+
+
+def test_node_info_role_and_name():
+    snapshot = build_aria_snapshot(FIXTURE_YAML, "https://example.com")
+    node = snapshot.ref_map[1]
+    assert node.role == "heading"
+    assert node.name == "Welcome"
+    assert node.nth == 0
+    assert node.actionable is False
+    assert node.states == {"level": "1"}
+
+
+def test_duplicate_role_name_nth():
+    snapshot = build_aria_snapshot(FIXTURE_YAML, "https://example.com")
+    # "link Home" appears at ref 2 (nth=0) and ref 6 (nth=1)
+    first_home = snapshot.ref_map[2]
+    second_home = snapshot.ref_map[6]
+    assert first_home.role == "link"
+    assert first_home.name == "Home"
+    assert first_home.nth == 0
+    assert second_home.role == "link"
+    assert second_home.name == "Home"
+    assert second_home.nth == 1
+
+
+def test_text_contains_ref_brackets():
+    snapshot = build_aria_snapshot(FIXTURE_YAML, "https://example.com")
+    assert "[1]" in snapshot.text
+    assert "[4]" in snapshot.text
+    assert "textbox" in snapshot.text
+    assert '[1] heading "Welcome" [level=1] read-only' in snapshot.text
+    assert '[5] button "Submit" actionable' in snapshot.text
+
+
+def test_non_node_lines_preserved():
+    yaml_with_props = """\
+- link "About":
+  - /url: /about
+"""
+    snapshot = build_aria_snapshot(yaml_with_props, "https://example.com")
+    # The property line "  - /url: /about" should NOT get a ref (starts with - /)
+    assert "  - /url: /about" in snapshot.text
+    # Only "About" link gets a ref
+    assert len(snapshot.ref_map) == 1
+
+
+def test_empty_yaml():
+    snapshot = build_aria_snapshot("", "https://example.com")
+    assert snapshot.ref_map == {}
+    assert snapshot.text == ""
+
+
+def test_node_without_name():
+    yaml = "- main\n"
+    snapshot = build_aria_snapshot(yaml, "https://example.com")
+    node = snapshot.ref_map[1]
+    assert node.role == "main"
+    assert node.name == ""
+    assert node.nth == 0
+    assert "[1] main read-only" in snapshot.text
+
+
+def test_ref_offset_applies_to_assigned_refs():
+    snapshot = build_aria_snapshot(FIXTURE_YAML, "https://example.com", ref_offset=6)
+
+    assert list(snapshot.ref_map.keys()) == [7, 8, 9, 10, 11, 12]
+    assert "[7] heading \"Welcome\"" in snapshot.text
+
+
+def test_actionable_roles_and_aria_states_are_parsed():
+    yaml = """\
+- button "Menu" [expanded=false]
+- checkbox "Open now" [checked]
+- tab "Details" [selected=true]
+- img "Logo"
+"""
+    snapshot = build_aria_snapshot(yaml, "https://example.com")
+
+    assert snapshot.ref_map[1].actionable is True
+    assert snapshot.ref_map[1].states == {"expanded": False}
+    assert snapshot.ref_map[2].actionable is True
+    assert snapshot.ref_map[2].states == {"checked": True}
+    assert snapshot.ref_map[3].states == {"selected": True}
+    assert snapshot.ref_map[4].actionable is False
+    assert '[1] button "Menu" [expanded=false] actionable' in snapshot.text
+    assert '[4] img "Logo" read-only' in snapshot.text
+
+
+def test_composite_menu_and_tree_roles_are_actionable():
+    yaml = """\
+- menuitemcheckbox "Show hidden files" [checked=false]
+- menuitemradio "Sort by date" [checked=true]
+- treeitem "Downloads" [expanded=true]
+"""
+    snapshot = build_aria_snapshot(yaml, "https://example.com/menu")
+
+    assert snapshot.ref_map[1].actionable is True
+    assert snapshot.ref_map[2].actionable is True
+    assert snapshot.ref_map[3].actionable is True
+    assert '[1] menuitemcheckbox "Show hidden files" [checked=false] actionable' in snapshot.text
+    assert '[2] menuitemradio "Sort by date" [checked=true] actionable' in snapshot.text
+    assert '[3] treeitem "Downloads" [expanded=true] actionable' in snapshot.text
+
+
+def test_disabled_actionable_role_is_read_only():
+    snapshot = build_aria_snapshot(
+        '- button "Submit" [disabled]\n- link "Next" [aria-disabled=true]\n',
+        "https://example.com",
+    )
+
+    assert snapshot.ref_map[1].actionable is False
+    assert snapshot.ref_map[1].states == {"disabled": True}
+    assert snapshot.ref_map[2].actionable is False
+    assert snapshot.ref_map[2].states == {"aria-disabled": True}
+    assert '[1] button "Submit" [disabled] read-only' in snapshot.text

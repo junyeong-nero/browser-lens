@@ -1,0 +1,95 @@
+1
+00:00:00,500 --> 00:00:06,200
+BrowserLens: interactive diagnosis of web-agent trajectories
+with a layered state-action graph. By Junyeong Song, Mingyu Kim,
+and Seongkook Heo, UNIST. UIST 2026 Posters.
+
+2
+00:00:07,200 --> 00:00:12,000
+A completed web-agent run leaves only a linear log;
+loops, dead ends, and stalls hide across distant lines.
+
+3
+00:00:12,200 --> 00:00:16,200
+The same run, viewed as a graph, shows the loop at a glance.
+The following demo walks through one real failed run.
+
+4
+00:00:16,500 --> 00:00:21,400
+A web agent was asked to find French startups with open jobs
+in the 2022 and 2023 Y Combinator batches. Did the run succeed?
+
+5
+00:00:21,600 --> 00:00:33,100
+The timeline preserves every step, but structure is hard to see:
+near-identical navigations repeat, line after line.
+
+6
+00:00:33,300 --> 00:00:40,400
+At the end of the log the run has failed: it hit its step budget
+while ping-ponging between two company pages.
+
+7
+00:00:40,600 --> 00:00:48,600
+The failed planner subgoal is marked in red. Easy to spot here,
+easy to lose in a hundred log lines.
+
+8
+00:00:48,900 --> 00:00:52,100
+The Graph view reorganizes the same run around browser-state identity.
+In the URL layer, revisits merge into a single node.
+
+9
+00:00:52,300 --> 00:00:59,400
+Visit count drives node size and color: this company page was
+visited 35 times. Badges count the cues collapsed underneath.
+
+10
+00:00:59,600 --> 00:01:04,500
+Loop edges surface at the top level: red cycles trace
+the run's ping-pong between pages.
+
+11
+00:01:04,800 --> 00:01:11,300
+Double-clicking drills down: the page opens into
+the screens seen on it.
+
+12
+00:01:11,500 --> 00:01:17,500
+One level further, a screen expands into its state-anchored actions.
+
+13
+00:01:17,800 --> 00:01:23,100
+The action layer exposes a stall: a click that loops on itself,
+ringed in red as a no-op.
+
+14
+00:01:23,300 --> 00:01:28,300
+Cues are attention signals, not failure labels.
+Selecting the node opens its evidence.
+
+15
+00:01:28,500 --> 00:01:33,000
+The no-op check reports DOM and ARIA unchanged,
+screenshot difference zero.
+
+16
+00:01:33,200 --> 00:01:38,900
+Before-and-after screenshots, the action replay, and the model's
+own reasoning let the reviewer confirm or reject the hypothesis.
+
+17
+00:01:39,100 --> 00:01:44,100
+Here the evidence confirms the click changed nothing:
+a stall, not progress.
+
+18
+00:01:44,300 --> 00:01:49,600
+Run statistics summarize the whole picture:
+98 tool calls, 80 repeated calls, 13 cue hits.
+
+19
+00:01:49,800 --> 00:01:56,100
+BrowserLens: a browser-state-anchored graph and
+a cue-to-evidence flow for diagnosing web-agent runs.
+

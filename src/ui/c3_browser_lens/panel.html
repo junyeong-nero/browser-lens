@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BrowserLens</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<link rel="stylesheet" href="/static/panel.css">
+
+</head>
+<body>
+
+<header>
+  <span class="brand-mark" aria-hidden="true">
+    <svg viewBox="0 0 24 24" focusable="false">
+      <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v7A2.5 2.5 0 0 1 17.5 15h-2.7l-2.25 3.37a.66.66 0 0 1-1.1 0L9.2 15H6.5A2.5 2.5 0 0 1 4 12.5v-7Zm3 1v2h10v-2H7Zm0 4v1.5h6v-1.5H7Z"></path>
+    </svg>
+  </span>
+  <span class="title" id="hdr-title">BrowserLens</span>
+  <span class="spacer"></span>
+  <span class="status">
+    <span class="status-dot" id="dot">●</span>
+    <span class="loading-indicator" id="status-loading" aria-hidden="true"></span>
+    <span id="status-label">connecting…</span>
+  </span>
+  <button id="live-btn" class="icon-label" type="button" aria-label="Start new live view" title="Start new live view" hidden>
+    <svg class="btn-icon" aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+      <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"></path>
+    </svg>
+    <span>New</span>
+  </button>
+  <button id="sessions-btn" class="icon-label" type="button" aria-label="Open history" title="Open history">
+    <svg class="btn-icon" aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+      <path d="M13 3a9 9 0 1 0 8.95 10h-2.02A7 7 0 1 1 17.9 8.1L15 11h7V4l-2.67 2.67A8.96 8.96 0 0 0 13 3zm-1 5v5l4.25 2.52.75-1.23-3.5-2.08V8H12z"></path>
+    </svg>
+    <span>History</span>
+  </button>
+</header>
+
+<div id="sessions-panel" class="hidden sessions-drawer" role="dialog" aria-label="History" aria-modal="false">
+  <div class="sessions-head">
+    <div class="sessions-head-main">
+      <span class="sessions-title">History</span>
+      <span id="sessions-summary" class="sessions-summary">Saved sessions</span>
+    </div>
+    <button id="sessions-close" class="icon-only" type="button" aria-label="Close History" title="Close History">
+      <svg class="btn-icon" aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+        <path d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.71 2.88 18.3 9.17 12 2.88 5.71 4.29 4.29l6.3 6.3 6.29-6.3 1.42 1.42z"></path>
+      </svg>
+    </button>
+  </div>
+  <div class="sessions-search-row">
+    <input id="sessions-search" class="sessions-search" type="search" aria-label="Search history" placeholder="Search query, session id, or model" autocomplete="off">
+  </div>
+  <div class="sessions-body">
+    <div id="sessions-list"><div class="sessions-message">Loading saved sessions</div></div>
+  </div>
+</div>
+
+<main id="main">
+  <div id="replay-controls">
+    <button id="replay-prev" class="icon-only" type="button" aria-label="Previous replay step" title="Previous replay step">
+      <svg class="btn-icon" aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+        <path d="M6 6h2v12H6V6zm3.5 6 8.5 6V6l-8.5 6z"></path>
+      </svg>
+    </button>
+    <button id="replay-play" class="icon-only" type="button" aria-label="Play or pause replay" title="Play or pause replay">
+      <svg class="btn-icon" aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+        <path d="M8 5v14l7-7-7-7zm8 0h2v14h-2V5z"></path>
+      </svg>
+    </button>
+    <button id="replay-next" class="icon-only" type="button" aria-label="Next replay step" title="Next replay step">
+      <svg class="btn-icon" aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+        <path d="M16 6h2v12h-2V6zM6 18l8.5-6L6 6v12z"></path>
+      </svg>
+    </button>
+    <select id="replay-speed" aria-label="replay speed">
+      <option value="1">1×</option>
+      <option value="4">4×</option>
+      <option value="16">16×</option>
+      <option value="instant">instant</option>
+    </select>
+    <input id="replay-slider" type="range" min="0" max="0" value="0" aria-label="replay progress">
+    <span id="replay-progress">0/0</span>
+  </div>
+  <div class="view-tabs">
+    <button type="button" class="view-tab icon-label active" data-view="timeline">
+      <svg class="btn-icon" aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+        <path d="M4 5h11v2H4V5zm0 6h16v2H4v-2zm0 6h11v2H4v-2z"></path>
+      </svg>
+      <span>Timeline</span>
+    </button>
+    <button type="button" class="view-tab icon-label" data-view="graph">
+      <svg class="btn-icon" aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+        <path d="M7 5a3 3 0 1 0 2.83 4h4.34A3 3 0 0 0 17 11a3 3 0 1 0-2.83-4H9.83A3 3 0 0 0 7 5zm0 2a1 1 0 1 1 0 2 1 1 0 0 1 0-2zm10 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2zM7 15a3 3 0 1 0 2.83 4h4.34A3 3 0 1 0 17 15a3 3 0 0 0-2.83 2H9.83A3 3 0 0 0 7 15zm0 2a1 1 0 1 1 0 2 1 1 0 0 1 0-2zm10 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"></path>
+      </svg>
+      <span>Graph</span>
+    </button>
+    <button type="button" class="view-tab icon-label" data-view="stats">
+      <svg class="btn-icon" aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+        <path d="M5 19h14v2H5v-2zm1-8h3v6H6v-6zm5-6h3v12h-3V5zm5 3h3v9h-3V8z"></path>
+      </svg>
+      <span>Stats</span>
+    </button>
+  </div>
+  <div class="view-pane active" data-view="timeline" id="timeline-wrap">
+    <div id="timeline">
+      <div id="empty-state">Ready for a task.</div>
+    </div>
+  </div>
+  <div class="view-pane" data-view="graph" id="graph-wrap">
+    <svg id="graph-svg">
+      <title>BrowserLens graph</title>
+      <defs>
+        <marker id="graph-arrow" viewBox="0 -5 10 10" refX="8" refY="0"
+                markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto">
+          <path d="M0,-4L8,0L0,4" fill="var(--fg-mute)"></path>
+        </marker>
+        <marker id="graph-arrow-cycle" viewBox="0 -5 10 10" refX="8" refY="0"
+                markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto">
+          <path d="M0,-4L8,0L0,4" fill="var(--md-sys-color-error)"></path>
+        </marker>
+      </defs>
+    </svg>
+    <div id="graph-controls" class="graph-controls" aria-label="Graph view controls">
+      <button id="graph-fit" class="icon-only" type="button" aria-label="Show all graph nodes" title="Show all nodes">
+        <svg class="btn-icon" aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+          <path d="M5 5h5V3H3v7h2V5zm9-2v2h5v5h2V3h-7zm5 16h-5v2h7v-7h-2v5zM5 14H3v7h7v-2H5v-5zm4-5h6v6H9V9z"></path>
+        </svg>
+      </button>
+      <button id="graph-zoom-in" class="icon-only" type="button" aria-label="Zoom graph in" title="Zoom in">
+        <svg class="btn-icon" aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+          <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"></path>
+        </svg>
+      </button>
+      <button id="graph-zoom-out" class="icon-only" type="button" aria-label="Zoom graph out" title="Zoom out">
+        <svg class="btn-icon" aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+          <path d="M5 11h14v2H5z"></path>
+        </svg>
+      </button>
+    </div>
+    <div id="graph-breadcrumb" class="graph-breadcrumb"></div>
+    <div id="graph-empty">no navigation yet.</div>
+    <div id="graph-tooltip" class="graph-tooltip hidden"></div>
+    <div id="graph-legend" class="graph-legend hidden" aria-label="Node color legend">
+      <div class="legend-title">visit count</div>
+      <div class="legend-scale">
+        <div class="legend-bar" role="presentation"></div>
+        <div class="legend-labels"><span>1</span><span data-legend-max>1</span></div>
+      </div>
+    </div>
+    <div id="graph-cue-legend" class="graph-cue-legend hidden" aria-label="Graph cue and node highlight legend">
+      <div class="legend-title">cues</div>
+      <ul class="cue-legend-list">
+        <li class="cue-legend-row" data-cue="cycle">
+          <span class="cue-legend-swatch cue-cycle-edge" aria-hidden="true"></span>
+          <span class="cue-legend-glyph" aria-hidden="true"></span>
+          <span class="cue-legend-label">loop edge</span>
+        </li>
+        <li class="cue-legend-row" data-cue="noop">
+          <span class="cue-legend-swatch cue-noop" aria-hidden="true"></span>
+          <span class="cue-legend-glyph" aria-hidden="true"></span>
+          <span class="cue-legend-label">no-op</span>
+        </li>
+      </ul>
+    </div>
+  </div>
+  <div class="view-pane" data-view="stats" id="stats-wrap">
+    <div class="stats-scroll">
+      <div class="stats-panel-head">
+        <h2 class="stats-panel-title">Stats</h2>
+        <button id="stats-help-btn" class="stats-help-btn icon-only" type="button" aria-label="Open stats metrics help" aria-controls="stats-help-panel" aria-haspopup="dialog" title="Stats metrics help">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor" aria-hidden="true" focusable="false">
+            <path d="M513.5-254.5Q528-269 528-290t-14.5-35.5Q499-340 478-340t-35.5 14.5Q428-311 428-290t14.5 35.5Q457-240 478-240t35.5-14.5ZM442-394h74q0-33 7.5-52t42.5-52q26-26 41-49.5t15-56.5q0-56-41-86t-97-30q-57 0-92.5 30T342-618l66 26q5-18 22.5-39t53.5-21q32 0 48 17.5t16 38.5q0 20-12 37.5T506-526q-44 39-54 59t-10 73Zm38 314q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"></path>
+          </svg>
+        </button>
+      </div>
+      <div id="stats-empty" class="stats-empty">no tool calls yet.</div>
+      <div id="stats-content" class="stats-content" hidden>
+        <section class="stats-section" aria-label="Stats overview">
+          <div class="stats-section-head">
+            <h2 class="stats-section-title">Overview</h2>
+          </div>
+          <div id="stats-overview" class="stats-grid"></div>
+        </section>
+        <div class="stats-chart-row">
+          <section class="stats-section" aria-label="Tool usage">
+            <div class="stats-section-head">
+              <h2 class="stats-section-title">Tool Usage</h2>
+            </div>
+            <div id="stats-tool-chart" class="stats-chart"></div>
+          </section>
+          <section class="stats-section" aria-label="Behavior mix">
+            <div class="stats-section-head">
+              <h2 class="stats-section-title">Behavior Mix</h2>
+            </div>
+            <div id="stats-behavior-chart" class="stats-chart"></div>
+          </section>
+        </div>
+        <section class="stats-section" aria-label="Diagnostics">
+          <div class="stats-section-head">
+            <h2 class="stats-section-title">Diagnostics</h2>
+          </div>
+          <div id="stats-diagnostics" class="stats-diagnostics-list"></div>
+        </section>
+      </div>
+    </div>
+    <div id="stats-help-panel" class="stats-help-panel" role="dialog" aria-modal="true" aria-labelledby="stats-help-title" hidden>
+      <div class="stats-help-backdrop" data-stats-help-close></div>
+      <section class="stats-help-card" tabindex="-1">
+        <div class="stats-help-head">
+          <h2 id="stats-help-title">Stats metrics</h2>
+          <button id="stats-help-close" class="icon-only" type="button" aria-label="Close stats metrics help" title="Close" data-stats-help-close>
+            <svg class="btn-icon" aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+              <path d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.71 2.88 18.3 9.17 12 2.88 5.71 4.29 4.29l6.3 6.3 6.29-6.3 1.42 1.42z"></path>
+            </svg>
+          </button>
+        </div>
+        <div class="stats-help-body">
+          <section class="stats-help-section">
+            <h3>Metric fields</h3>
+            <dl class="stats-help-list">
+              <div><dt>Tool calls</dt><dd>Model-declared browser function calls recorded across steps.</dd></div>
+              <div><dt>Tool success</dt><dd>Executed calls that returned a non-error response.</dd></div>
+              <div><dt>Unique tools</dt><dd>Distinct tool names seen in the current session.</dd></div>
+              <div><dt>State-changing</dt><dd>Calls outside the observation set, such as clicking, typing, navigation, recovery, or waiting.</dd></div>
+              <div><dt>Repeated calls</dt><dd>Extra calls with the same tool name and arguments after the first matching call.</dd></div>
+              <div><dt>Cue hits</dt><dd>Graph cue annotations currently counted as loop, no-op, or repeated-state evidence.</dd></div>
+            </dl>
+          </section>
+          <section class="stats-help-section">
+            <h3>Charts</h3>
+            <dl class="stats-help-list">
+              <div><dt>Tool Usage</dt><dd>Breaks calls down by exact tool name; hover or focus a row for count, success, skipped, and failed values.</dd></div>
+              <div><dt>Behavior Mix</dt><dd>Groups tool calls into Observation, Interaction, Navigation, Recovery, and Waiting categories.</dd></div>
+              <div><dt>Diagnostics</dt><dd>Highlights ratios and warning signals such as Observation-to-action balance, navigation churn, skipped calls, no-op cues, revisits, and emitted errors.</dd></div>
+            </dl>
+          </section>
+          <section class="stats-help-section">
+            <h3>Tool categories</h3>
+            <dl class="stats-help-list stats-help-tool-list">
+              <div><dt>Observation</dt><dd><code>observe_page</code>, <code>check_by_ref</code>, <code>list_tabs</code>, and <code>get_accessibility_tree</code> inspect the current browser state without intentionally changing it.</dd></div>
+              <div><dt>Interaction</dt><dd>Click, type, scroll, hover, select, check, key, and drag-style tools operate on the current page.</dd></div>
+              <div><dt>Navigation</dt><dd><code>open_web_browser</code>, <code>navigate</code>, <code>search</code>, history, reload, and tab switching/closing tools change the browsing context.</dd></div>
+              <div><dt>Recovery</dt><dd>Back, forward, reload, tab switch, and tab close calls often indicate the agent is recovering from a wrong or stale state.</dd></div>
+              <div><dt>Waiting</dt><dd><code>wait_5_seconds</code> and <code>wait_for_ref</code> spend time waiting for page state or an element reference.</dd></div>
+            </dl>
+          </section>
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<aside id="left-sidebar" class="side-panel" aria-label="Session details">
+  <div class="sheet-body">
+    <details class="side-section side-scroll-section side-task-section" open>
+      <summary data-icon="task_alt">Task</summary>
+      <div class="side-body"><div id="side-task" class="side-empty">no active task.</div></div>
+    </details>
+
+    <details class="side-section" open>
+      <summary data-icon="monitor_heart">Status</summary>
+      <div class="side-body">
+        <div class="bullet"><span class="dot">•</span><span><span class="k">step</span> <span class="v" id="meta-step">—</span></span></div>
+        <div class="bullet"><span class="dot">•</span><span><span class="k">url</span> <span class="v" id="meta-url">—</span></span></div>
+        <div class="bullet"><span class="dot">•</span><span><span class="k">state</span> <span class="v" id="meta-state">idle</span></span></div>
+      </div>
+    </details>
+
+    <details class="side-section side-scroll-section side-plan-section" open>
+      <summary data-icon="route">Plan</summary>
+      <div class="side-body" id="side-plan"><div class="side-empty">no plan yet.</div></div>
+    </details>
+  </div>
+</aside>
+
+<div id="left-resizer" class="resizer" title="drag to resize left panel"></div>
+<div id="right-resizer" class="resizer" title="drag to resize right panel"></div>
+
+<aside id="right-sidebar" class="side-panel" aria-label="Additional action information">
+  <div class="sheet-body">
+    <div id="side-step-title" class="side-step-title side-empty">no action step selected.</div>
+    <details class="side-section side-scroll-section side-replay-section" open>
+      <summary data-icon="play_circle">Replay</summary>
+      <div class="side-body" id="side-replay"><div class="side-empty">no action step selected.</div></div>
+    </details>
+    <details class="side-section side-scroll-section side-selection-section" open>
+      <summary data-icon="ads_click">Additional Info</summary>
+      <div class="side-body" id="side-selection"><div class="side-empty">no action step selected.</div></div>
+    </details>
+    <details id="side-llm-context-section" class="side-section side-scroll-section side-llm-raw-section" hidden>
+      <summary data-icon="psychology">View LLM raw context</summary>
+      <div class="side-body llm-raw-block" id="side-llm-context"></div>
+    </details>
+    <details id="side-llm-response-section" class="side-section side-scroll-section side-llm-raw-section" hidden>
+      <summary data-icon="terminal">View LLM response</summary>
+      <div class="side-body llm-raw-block" id="side-llm-response"></div>
+    </details>
+    <details id="side-dom-state-section" class="side-section side-scroll-section side-browser-state-section browser-state-details" hidden>
+      <summary data-icon="code_blocks">View DOM State</summary>
+      <div class="side-body browser-state-block" id="side-dom-state"></div>
+    </details>
+    <details id="side-aria-state-section" class="side-section side-scroll-section side-browser-state-section browser-state-details" hidden>
+      <summary data-icon="account_tree">View ARIA State</summary>
+      <div class="side-body browser-state-block" id="side-aria-state"></div>
+    </details>
+  </div>
+</aside>
+
+<footer>
+  <div class="input-shell" id="input-shell">
+    <div class="input-row">
+      <textarea id="input" placeholder="Describe what you want the agent to do…" rows="1" disabled></textarea>
+    </div>
+    <div class="input-controls">
+      <div class="input-agent">
+        <span id="agent-model">—</span>
+      </div>
+      <div class="input-actions">
+        <button id="btn" class="icon-only" type="button" aria-label="Run task" title="Run task" disabled>
+          <svg class="btn-icon" aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+            <path id="btn-icon-path" d="M8 5v14l11-7z"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="/static/graph/graph-state.js"></script>
+<script src="/static/graph/graph-artifacts.js"></script>
+<script src="/static/graph/graph-noop-evidence.js"></script>
+<script src="/static/graph/graph-right-panel.js"></script>
+<script src="/static/graph/graph-cues.js"></script>
+<script src="/static/graph/graph-build.js"></script>
+<script src="/static/graph/graph-selection.js"></script>
+<script src="/static/graph/graph-layout.js"></script>
+<script src="/static/graph/graph-tooltip.js"></script>
+<script src="/static/graph/graph-render.js"></script>
+<script src="/shared-static/panel/panel-state.js"></script>
+<script src="/shared-static/panel/panel-timeline.js"></script>
+<script src="/shared-static/panel/panel-sidebar.js"></script>
+<script src="/shared-static/panel/panel-stats-data.js"></script>
+<script src="/shared-static/panel/panel-stats-render.js"></script>
+<script src="/shared-static/panel/panel-events.js"></script>
+<script src="/shared-static/panel/panel-markdown.js"></script>
+<script src="/shared-static/panel/panel-replay.js"></script>
+<script src="/shared-static/panel/panel-input.js"></script>
+</body>
+</html>

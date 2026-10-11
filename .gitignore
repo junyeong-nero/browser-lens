@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.venv
+
+# Environment variables
+.env
+.env.*
+
+# macOS metadata
+.DS_Store
+
+# Run artifacts (may contain sensitive page content)
+logs/
+
+# Playwright / Node
+node_modules/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+
+# Local agent and tool state
+.claude/
+.codex/
+.playwright-mcp/

@@ -1,0 +1,69 @@
+const dot         = document.getElementById('dot');
+const statusLabel = document.getElementById('status-label');
+const timeline    = document.getElementById('timeline');
+const emptyState  = document.getElementById('empty-state');
+const input       = document.getElementById('input');
+const btn         = document.getElementById('btn');
+const btnIconPath = document.getElementById('btn-icon-path');
+const statusLoading = document.getElementById('status-loading');
+const inputShell  = document.getElementById('input-shell');
+const agentModel  = document.getElementById('agent-model');
+const sessionsBtn = document.getElementById('sessions-btn');
+const sessionsPanel = document.getElementById('sessions-panel');
+const sessionsClose = document.getElementById('sessions-close');
+const sessionsList = document.getElementById('sessions-list');
+const sessionsSearch = document.getElementById('sessions-search');
+const sessionsSummary = document.getElementById('sessions-summary');
+const liveBtn = document.getElementById('live-btn');
+const replayControls = document.getElementById('replay-controls');
+const replayPrev = document.getElementById('replay-prev');
+const replayPlay = document.getElementById('replay-play');
+const replayNext = document.getElementById('replay-next');
+const replaySpeed = document.getElementById('replay-speed');
+const replaySlider = document.getElementById('replay-slider');
+const replayProgress = document.getElementById('replay-progress');
+
+const sideTask       = document.getElementById('side-task');
+const sidePlan       = document.getElementById('side-plan');
+const sideSelection  = document.getElementById('side-selection');
+const sideReplay     = document.getElementById('side-replay');
+const sideStepTitle  = document.getElementById('side-step-title');
+const simpleActionDetails = document.getElementById('simple-action-details');
+const metaStep       = document.getElementById('meta-step');
+const metaUrl        = document.getElementById('meta-url');
+const metaState      = document.getElementById('meta-state');
+
+let isRunning = false;
+let isSubmitting = false;
+let isStopping = false;
+let inputAllowed = false;
+let reconnectDelay = 1000;
+let ws = null;
+let replayMode = false;
+let replayPaused = true;
+let replayEvents = [];
+let replayIndex = 0;
+let replayTimer = null;
+let replaySessionId = null;
+let liveSessionId = null;
+let liveIsRunning = false;
+
+let subgoals = [];
+let subgoalStartRowsById = new Map();
+let pendingReplanFailedSubgoalId = null;
+let actionSummariesByStep = new Map();
+let actionSummaryCardsByStep = new Map();
+let reasoningByStep = new Map();
+let functionCallsByStep = new Map();
+let observedUrlsByStep = new Map();
+let actionShotsByStep = new Map();
+let artifactsByStep = new Map();
+let llmInferencesByStep = new Map();
+let actionExecutionsByStep = new Map();
+let pendingAgentFinalMessage = null;
+
+let currentTimelineStepId = null;
+let currentTimelineStepGroup = null;
+let selectedTimelineStepId = null;
+
+// ── WebSocket ──────────────────────────────────────────

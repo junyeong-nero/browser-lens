@@ -1,0 +1,479 @@
+  #graph-empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--fg-mute);
+    font-size: 13px;
+    pointer-events: none;
+  }
+  .graph-link {
+    stroke: var(--border-hi);
+    stroke-width: 1.4;
+    fill: none;
+    marker-end: url(#graph-arrow);
+  }
+  .graph-link.cycle {
+    stroke: var(--md-sys-color-error);
+    marker-end: url(#graph-arrow-cycle);
+    filter: drop-shadow(0 0 5px color-mix(in srgb, var(--md-sys-color-error) 55%, transparent));
+  }
+  .graph-node circle {
+    fill: var(--graph-node-fill, var(--surface-2));
+    stroke: transparent;
+    stroke-width: 0;
+    transition: fill 0.16s ease, stroke 0.16s ease, stroke-width 0.16s ease, r 0.16s ease;
+  }
+  .graph-node.root circle {
+    stroke: color-mix(in srgb, var(--md-sys-color-primary) 72%, white 10%);
+    stroke-width: 2.5;
+  }
+  .graph-node.url circle {
+    stroke-linejoin: round;
+  }
+  .graph-node.viewport circle {
+    stroke-dasharray: 0;
+  }
+  .graph-node.action circle {
+    stroke-dasharray: 0;
+  }
+  .graph-node.drillable circle {
+    cursor: zoom-in;
+  }
+  .graph-node.current circle {
+    stroke: var(--graph-accent-current);
+    stroke-width: 3;
+  }
+  .graph-node.running circle {
+    stroke: var(--graph-accent-running);
+    stroke-width: 3;
+  }
+  .graph-node circle { cursor: pointer; }
+  .graph-node .graph-node-shape {
+    fill: var(--graph-node-fill, var(--surface-2));
+    stroke: transparent;
+    stroke-width: 0;
+    cursor: pointer;
+    transition: fill 0.16s ease, stroke 0.16s ease, stroke-width 0.16s ease;
+  }
+  .graph-node .graph-node-cue-shape {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 0;
+    pointer-events: none;
+    transition: stroke 0.16s ease, stroke-width 0.16s ease;
+  }
+  .graph-node .graph-node-cue-shape.cue-noop {
+    stroke: var(--graph-accent-noop);
+    stroke-width: 4;
+  }
+  .graph-node.start .graph-node-shape,
+  .graph-node.end .graph-node-shape {
+    stroke: transparent;
+    stroke-width: 0;
+  }
+  .graph-node.start > circle,
+  .graph-node.end > circle { display: none; }
+  .graph-node.current.start .graph-node-shape,
+  .graph-node.current.end .graph-node-shape {
+    stroke: var(--graph-accent-current);
+    stroke-width: 3;
+  }
+  .graph-node.running.start .graph-node-shape,
+  .graph-node.running.end .graph-node-shape {
+    stroke: var(--graph-accent-running);
+    stroke-width: 3;
+  }
+  .graph-node.selected.start .graph-node-shape,
+  .graph-node.selected.end .graph-node-shape {
+    stroke: var(--graph-accent-selected);
+    stroke-width: 3;
+  }
+  .graph-node.selected circle {
+    stroke: var(--graph-accent-selected);
+    stroke-width: 3;
+  }
+  .graph-node.selected text { fill: var(--graph-accent-selected); font-weight: 600; }
+  .graph-node text {
+    fill: var(--fg-dim);
+    font-size: 11px;
+    font-family: var(--mono);
+    pointer-events: none;
+    user-select: none;
+  }
+  .graph-node.url .graph-node-label { font-size: 12px; font-weight: 650; }
+  .graph-node.viewport .graph-node-label { font-size: 11px; letter-spacing: .01em; }
+  .graph-node.action .graph-node-label { font-size: 10px; }
+  .graph-node.root .graph-node-label { fill: var(--md-sys-color-primary); font-weight: 700; }
+  .graph-node.current text { fill: var(--graph-accent-current); font-weight: 600; }
+  .graph-node.running text { fill: var(--graph-accent-running); font-weight: 600; }
+  .graph-breadcrumb .current-layer { font-weight: 700; color: var(--fg); }
+  .graph-breadcrumb .parent-label {
+    margin-left: 8px;
+    color: var(--fg-mute);
+    max-width: 280px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .graph-tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--surface-2);
+    border: 1px solid var(--border-hi);
+    border-radius: var(--radius-md);
+    padding: 10px 12px;
+    font-family: var(--sans);
+    font-size: 12px;
+    color: var(--fg);
+    max-width: 420px;
+    z-index: 20;
+    box-shadow: var(--shadow-2);
+  }
+  .graph-breadcrumb {
+    position: absolute;
+    top: 12px;
+    left: 14px;
+    z-index: 10;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-family: var(--sans);
+    font-size: 12px;
+    color: var(--fg-dim);
+    background: color-mix(in srgb, var(--md-sys-color-surface-container-high) 92%, transparent);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-full);
+    padding: 6px 10px;
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(12px);
+  }
+  .graph-breadcrumb button {
+    background: color-mix(in srgb, var(--md-sys-color-primary) 10%, transparent);
+    border: 0;
+    color: var(--primary);
+    font-family: inherit;
+    font-size: inherit;
+    cursor: pointer;
+    padding: 2px 8px;
+    border-radius: var(--md-sys-shape-corner-full);
+    box-shadow: none;
+  }
+  .graph-breadcrumb button:hover {
+    color: var(--md-sys-color-on-primary-container);
+    background: var(--md-sys-color-primary-container);
+  }
+  .graph-breadcrumb .sep { color: var(--fg-mute); }
+  .graph-controls {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    z-index: 12;
+    display: flex;
+    gap: 6px;
+    padding: 4px;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: color-mix(in srgb, var(--md-sys-color-surface-container-high) 92%, transparent);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(12px);
+  }
+  .graph-controls .icon-only {
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    color: var(--fg-dim);
+    background: transparent;
+  }
+  .graph-controls .icon-only:hover:not(:disabled) {
+    color: var(--primary);
+    background: color-mix(in srgb, var(--md-sys-color-primary) var(--md-sys-state-hover-layer), transparent);
+  }
+  .graph-controls .btn-icon {
+    width: 18px;
+    height: 18px;
+  }
+  .graph-legend {
+    position: absolute;
+    bottom: 104px;
+    right: 14px;
+    z-index: 10;
+    width: var(--graph-overlay-legend-width);
+    min-width: 0;
+    padding: 8px 10px;
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--md-sys-color-surface-container-high) 92%, transparent);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(12px);
+    pointer-events: none;
+    overflow: hidden;
+    font-family: var(--sans);
+    color: var(--fg-dim);
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .graph-legend.hidden { display: none; }
+  .graph-legend .legend-title {
+    align-self: flex-start;
+    color: var(--fg);
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .graph-legend .legend-scale {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+  }
+  .graph-legend .legend-bar {
+    width: 100%;
+    height: 10px;
+    border-radius: 999px;
+    clip-path: inset(0 round 999px);
+    overflow: hidden;
+    background: linear-gradient(90deg, var(--graph-work-color-low) 0%, var(--graph-work-color-low-mid) 25%, var(--graph-work-color-mid) 50%, var(--graph-work-color-high-mid) 75%, var(--graph-work-color-high) 100%);
+  }
+  .graph-legend .legend-labels {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    margin-top: 0;
+    font-size: 10px;
+    line-height: 1.1;
+    white-space: nowrap;
+  }
+
+  /* Outline §S2 cue legend — pinned bottom-right so reviewers can map any
+     node color/glyph back to its motif candidate type at a glance. */
+  .graph-cue-legend {
+    position: absolute;
+    bottom: 14px;
+    right: 14px;
+    z-index: 10;
+    width: var(--graph-overlay-legend-width);
+    padding: 8px 10px;
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--md-sys-color-surface-container-high) 92%, transparent);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(12px);
+    pointer-events: none;
+    font-family: var(--sans);
+    color: var(--fg);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+  .graph-cue-legend.hidden { display: none; }
+  .graph-cue-legend .legend-title {
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--fg);
+    text-transform: lowercase;
+    margin-bottom: 2px;
+  }
+  .cue-legend-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .cue-legend-row {
+    display: grid;
+    grid-template-columns: 14px 14px 1fr;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--fg-dim);
+    line-height: 1.2;
+  }
+  .cue-legend-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: transparent;
+    box-sizing: border-box;
+  }
+  .cue-legend-swatch.cue-noop     { border: 4px solid var(--graph-accent-noop); }
+  .cue-legend-swatch.cue-cycle-edge {
+    width: 16px; height: 0;
+    border-top: 3px solid var(--graph-accent-cycle);
+    border-radius: 0;
+    align-self: center;
+  }
+  .cue-legend-glyph {
+    font-family: var(--mono);
+    font-weight: 700;
+    text-align: center;
+    color: var(--fg);
+  }
+  .cue-legend-label { color: var(--fg); }
+  .graph-tooltip.hidden { display: none; }
+  .graph-tooltip .tt-url {
+    color: var(--orange);
+    word-break: break-all;
+    margin-bottom: 4px;
+    font-weight: 600;
+  }
+  .graph-tooltip .tt-row {
+    display: grid;
+    grid-template-columns: 76px 1fr;
+    gap: 8px;
+    color: var(--fg-dim);
+    line-height: 1.45;
+  }
+  .graph-tooltip .tt-row .v { color: var(--fg); }
+  .node-cue-badge { cursor: pointer; }
+  .node-cue-badge circle.own-red,
+  .node-cue-badge circle.rollup-red { fill: var(--graph-accent-cycle); stroke: none; }
+  /* Outline §S2: badge color encodes dominant cue type. */
+  .node-cue-badge circle.cue-cycle    { fill: var(--graph-accent-cycle); stroke: none; }
+  .node-cue-badge circle.cue-noop     { fill: var(--graph-accent-cycle); stroke: none; }
+  .node-cue-badge text {
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 700;
+    text-anchor: middle;
+    dominant-baseline: central;
+    pointer-events: none;
+  }
+  .node-cue-badge text.on-fill,
+  .node-cue-badge text.on-stroke { fill: white; }
+
+  /* P5: before/after slider — the "after" image clip-paths in from the right
+     based on --split, revealing the "before" beneath as the user drags. */
+  .artifact-slider {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+    border-radius: 6px;
+    background: var(--surface-2);
+    aspect-ratio: 16 / 10;
+  }
+  .artifact-slider img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    user-select: none;
+    pointer-events: none;
+  }
+  .artifact-slider .artifact-slider-after {
+    clip-path: inset(0 0 0 var(--split, 50%));
+  }
+  .artifact-slider .artifact-slider-range {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: ew-resize;
+    margin: 0;
+  }
+  .artifact-slider::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--tds-fill-warning);
+    left: var(--split, 50%);
+    transform: translateX(-1px);
+    pointer-events: none;
+  }
+  /* P5: ARIA pre/post diff — color-coded line list, monospace, scrollable. */
+  .aria-diff {
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.5;
+    max-height: 320px;
+    overflow: auto;
+    border: 1px solid var(--surface-3);
+    border-radius: 4px;
+    padding: 6px 8px;
+    background: var(--surface-1);
+  }
+  .aria-diff-empty { color: var(--fg-dim); font-family: inherit; }
+  .aria-diff-line { display: flex; gap: 6px; white-space: pre-wrap; word-break: break-word; }
+  .aria-diff-line.added   { background: rgba(34, 197, 94, 0.10); color: #16a34a; }
+  .aria-diff-line.removed { background: rgba(239, 68, 68, 0.10); color: #dc2626; }
+  .aria-diff-prefix { flex: 0 0 auto; font-weight: 700; opacity: 0.7; }
+  .aria-diff-truncated { color: var(--fg-dim); font-style: italic; margin-top: 4px; }
+
+  /* Cue-ring: outer stroke that announces the dominant own-cue at a glance
+     while letting the inner viridis action-count fill remain readable. */
+  .graph-node circle.cue-ring { fill: none; pointer-events: none; }
+  /* No .cue-ring.cue-cycle: cycle membership is already shown by edge
+     highlight. No .cue-ring.cue-repeated: repetition is encoded by fill/radius. */
+  .graph-node circle.cue-ring.cue-noop     { stroke: var(--graph-accent-noop); stroke-width: 4; }
+
+  #timeline::-webkit-scrollbar,
+  aside.side-panel::-webkit-scrollbar,
+  .side-body::-webkit-scrollbar { width: 10px; }
+  #timeline::-webkit-scrollbar-thumb,
+  aside.side-panel::-webkit-scrollbar-thumb,
+  .side-body::-webkit-scrollbar-thumb { background: var(--surface-3); border: 3px solid transparent; border-radius: 999px; background-clip: content-box; }
+  #timeline::-webkit-scrollbar-track,
+  aside.side-panel::-webkit-scrollbar-track,
+  .side-body::-webkit-scrollbar-track { background: transparent; }
+
+  /* Plain text line, no box */
+  .row {
+    padding: 2px 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--fg);
+    flex-shrink: 0;
+  }
+  .row.dim       { color: var(--fg-dim); }
+  .row.thinking  { color: var(--fg-dim); font-style: italic; }
+  .row.ok        { color: var(--ok); }
+  .row.err       { color: var(--err); }
+  .row.warn      { color: var(--warn); }
+  .row.user-message {
+    align-self: flex-end;
+    max-width: min(76%, 720px);
+    text-align: left;
+    padding: 10px 14px;
+    border-radius: var(--md-sys-shape-corner-lg) var(--md-sys-shape-corner-lg) 4px var(--md-sys-shape-corner-lg);
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+  }
+  .row.agent-message {
+    align-self: flex-start;
+    max-width: min(76%, 720px);
+    text-align: left;
+    padding: 10px 14px;
+    border-radius: var(--md-sys-shape-corner-lg) var(--md-sys-shape-corner-lg) var(--md-sys-shape-corner-lg) 4px;
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+  }
+  .row.agent-message.failed-message {
+    background: var(--md-sys-color-error-container);
+    color: var(--md-sys-color-on-error-container);
+  }
+  .row.agent-message .message-title {
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .row.agent-message .message-meta {
+    color: inherit;
+    font-size: 13px;
+    opacity: .88;
+  }
+  .row.agent-message .message-markdown {
+    overflow-wrap: anywhere;
+  }
+  .row.agent-message .message-markdown > :first-child { margin-top: 0; }

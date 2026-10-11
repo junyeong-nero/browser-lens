@@ -1,0 +1,151 @@
+{
+  "tasks": [
+    {
+      "id": "20260601-000001",
+      "use": "main",
+      "site": "Y Combinator",
+      "status": "complete",
+      "query": "At https://www.ycombinator.com/, find all startups from the 2022 and 2023 Y Combinator batches that are headquartered in France and currently have open job postings."
+    },
+    {
+      "id": "20260601-000002",
+      "use": "main",
+      "site": "IMDb",
+      "status": "complete",
+      "query": "At https://www.imdb.com/, search for the movies \"No Other Choice\" and \"My Daughter is a Zombie\" and tell me the difference in their ratings."
+    },
+    {
+      "id": "20260601-000003",
+      "use": "main",
+      "site": "Google Maps",
+      "status": "partial failure",
+      "query": "At https://google.com/maps/, find the highest-rated hotel suitable for 4 guests in Manhattan, New York, and tell me the fastest public-transit option from that hotel to LGA airport."
+    },
+    {
+      "id": "20260601-000004",
+      "use": "main",
+      "site": "Google Maps",
+      "status": "partial failure",
+      "query": "At https://www.google.com/maps/, find a gas station in Manhattan, NY with a rating above 4.0, and sort the user reviews by the lowest rating."
+    },
+    {
+      "id": "20260601-000005",
+      "use": "main-segment",
+      "site": "Steam",
+      "status": "interrupted",
+      "query": "At https://store.steampowered.com/, check the most recent negative reviews from users with over 100 hours of playtime for the game that won the 2023 VR Game of the Year award."
+    },
+    {
+      "id": "20260601-000006",
+      "use": "pilot",
+      "site": "VS Code Docs",
+      "status": "complete",
+      "query": "At https://code.visualstudio.com/, find the keyboard shortcut to open the Command Palette in VS Code on macOS from the official documentation."
+    },
+    {
+      "id": "20260601-000007",
+      "use": "pilot",
+      "site": "Python.org",
+      "status": "complete",
+      "query": "At https://www.python.org/, navigate to the changelog page for the most recent stable version of the Python programming language."
+    },
+    {
+      "id": "20260601-000008",
+      "use": "pilot",
+      "site": "IMDb",
+      "status": "complete",
+      "query": "At https://www.imdb.com/, show the crazy credits for the movie \"Prometheus\"."
+    },
+    {
+      "id": "20260601-000009",
+      "use": "reserve",
+      "site": "League of Legends",
+      "status": "complete",
+      "query": "At https://www.leagueoflegends.com/, browse the final skin in the list for the champion Ahri."
+    },
+    {
+      "id": "20260601-000010",
+      "use": "reserve",
+      "site": "arXiv",
+      "status": "partial failure",
+      "query": "At https://arxiv.org/, search for reinforcement-learning papers under the Computer Science and Mathematics topics, by most recent submission date between September 2024 and January 2025."
+    },
+    {
+      "id": "20260601-000011",
+      "use": "reserve",
+      "site": "정부24",
+      "status": "failed",
+      "query": "At https://www.gov.kr/, go to the 'Welfare Services' tab and check the list of benefits related to 'Low-Income Support'."
+    },
+    {
+      "id": "20260601-000012",
+      "use": "reserve",
+      "site": "UPS",
+      "status": "partial failure",
+      "query": "At https://www.ups.com/, calculate the shipping cost for a 12x10x8 inch, 5-pound package sent via UPS Ground from New York, NY 10001 to Los Angeles, CA 90001."
+    },
+    {
+      "id": "20260601-000013",
+      "use": "expansion",
+      "site": "HuggingFace",
+      "status": "pending",
+      "query": "At https://huggingface.co/models, filter for the Text Classification task and the Apache-2.0 license, sort by most downloads, and tell me the name and download count of the top model."
+    },
+    {
+      "id": "20260601-000014",
+      "use": "expansion",
+      "site": "HuggingFace",
+      "status": "pending",
+      "query": "At https://huggingface.co/, compare the likes and downloads of the two models 'bert-base-uncased' and 'distilbert-base-uncased', and tell me which one is more popular."
+    },
+    {
+      "id": "20260601-000015",
+      "use": "expansion",
+      "site": "HuggingFace",
+      "status": "pending",
+      "query": "At https://huggingface.co/datasets, find the 'imdb' dataset, open the Dataset Viewer, and check the label value of the first row of the train split."
+    },
+    {
+      "id": "20260601-000016",
+      "use": "expansion",
+      "site": "GitHub",
+      "status": "pending",
+      "query": "At https://github.com/, search repositories related to 'web agent' sorted by most stars, filter by the Python language, and tell me the name and star count of the top repository."
+    },
+    {
+      "id": "20260601-000017",
+      "use": "expansion",
+      "site": "GitHub",
+      "status": "pending",
+      "query": "At https://github.com/, open the README.md file in the huggingface/transformers repository and check its most recent commit message and author."
+    },
+    {
+      "id": "20260601-000018",
+      "use": "expansion",
+      "site": "GitHub",
+      "status": "pending",
+      "query": "At https://github.com/, in the pytorch/pytorch repository, check the number of open issues labeled 'bug' and tell me the title of the most recently opened bug issue."
+    },
+    {
+      "id": "20260601-000019",
+      "use": "expansion",
+      "site": "Papers with Code",
+      "status": "pending",
+      "query": "At https://paperswithcode.com/, on the Image Classification leaderboard for the ImageNet benchmark, tell me the difference in Top-1 Accuracy between the 1st and 2nd place models."
+    },
+    {
+      "id": "20260601-000020",
+      "use": "expansion",
+      "site": "PyPI",
+      "status": "pending",
+      "query": "At https://pypi.org/, in the Release history of the 'requests' package, check the latest version number and the one before it, and tell me the difference in their release dates."
+    },
+    {
+      "id": "20260601-000021",
+      "use": "expansion",
+      "site": "arXiv",
+      "status": "pending",
+      "query": "At https://arxiv.org/, search for papers with 'web agent' in the title submitted in 2024 or later, and tell me the title and first author of the most recently submitted paper."
+    }
+  ]
+}

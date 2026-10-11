@@ -1,0 +1,39 @@
+models:
+    actor:
+        endpoint_url: https://api.openai.com/v1
+        model: gpt-5.4-mini-2026-03-17
+        temperature: 0.2
+        reasoning:
+            effort: high
+    planner:
+        endpoint_url: https://api.openai.com/v1
+        model: gpt-5.4-mini-2026-03-17
+        temperature: 0.8
+        reasoning:
+            effort: high
+    summary:
+        endpoint_url: https://api.openai.com/v1
+        model: gpt-4o-mini
+
+# Execution constraints used by BrowserAgent.
+# - max_steps_per_subgoal: per-Plan-and-Act step browser-action budget.
+# - max_total_steps: total step budget for one task.
+# - max_subgoals: maximum Plan-and-Act plan iterations (replan cycles) per task.
+constraints:
+    max_steps_per_subgoal: 20
+    max_total_steps: 100
+    max_subgoals: 10
+
+# Model endpoint fields:
+# - endpoint_url: OpenAI-compatible API base URL. Known provider labels and
+#   default API key env names are inferred from this URL.
+# - api: optional advanced override; defaults to "responses" (OpenAI Responses API,
+#   POST /v1/responses). Set "chat" only for Chat Completions-only endpoints.
+# - api_key_env: optional override for the bearer-token environment variable.
+#   Defaults are inferred from endpoint_url, for example OPENROUTER_API_KEY for
+#   OpenRouter and OPENAI_API_KEY for api.openai.com.
+# - token_limit_field: max_tokens or max_completion_tokens, depending on endpoint/model support.
+# - temperature: optional actor/planner sampling override. It is only sent to
+#   endpoints/models that support custom sampling parameters.
+# - reasoning.effort: optional top-level reasoning_effort for compatible reasoning models.
+# - supports_image_inputs: set true only for endpoints/models that accept image content.
